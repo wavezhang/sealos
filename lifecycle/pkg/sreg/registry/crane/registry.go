@@ -35,7 +35,7 @@ func NewRegistry(domain string, authConfig registry.AuthConfig) (name.Registry, 
 	domain = NormalizeRegistry(domain)
 	ping := func(v name.Registry) error {
 		au, _ := NewDefaultKeychain(map[string]registry.AuthConfig{domain: authConfig}).Resolve(v)
-		_, err := transport.NewWithContext(context.Background(), v, au, http.DefaultSkipVerify, nil)
+		_, err := transport.NewWithContext(context.Background(), v, au, http.Transport(), nil)
 		return err
 	}
 

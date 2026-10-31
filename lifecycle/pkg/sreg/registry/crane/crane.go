@@ -29,7 +29,7 @@ import (
 )
 
 func GetCraneOptions(authConfig map[string]registry.AuthConfig) []crane.Option {
-	return []crane.Option{crane.WithAuthFromKeychain(NewDefaultKeychain(authConfig)), crane.WithTransport(http.DefaultSkipVerify)}
+	return []crane.Option{crane.WithAuthFromKeychain(NewDefaultKeychain(authConfig)), crane.WithTransport(http.Transport())}
 }
 
 func GetImageManifestFromAuth(image string, authConfig map[string]registry.AuthConfig) (newImage string, data []byte, cfg *registry.AuthConfig, err error) {

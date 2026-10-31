@@ -64,7 +64,7 @@ func newDefaultPullOptions() *pullOptions {
 	return &pullOptions{
 		authfile:   auth.GetDefaultAuthFile(),
 		pullPolicy: "missing",
-		tlsVerify:  false,
+		tlsVerify:  true,
 		os:         runtime.GOOS,
 		arch:       runtime.GOARCH,
 		platform:   []string{parse.DefaultPlatform()},

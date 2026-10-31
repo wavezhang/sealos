@@ -51,7 +51,7 @@ func (opts *globalOptions) newSystemContext() *types.SystemContext {
 		ArchitectureChoice:          opts.overrideArch,
 		OSChoice:                    opts.overrideOS,
 		VariantChoice:               opts.overrideVariant,
-		DockerInsecureSkipTLSVerify: types.OptionalBoolTrue,
+		DockerInsecureSkipTLSVerify: types.NewOptionalBool(httputils.InsecureTLS()),
 	}
 	return ctx
 }

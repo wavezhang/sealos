@@ -57,7 +57,7 @@ func (is *tmpRegistryImage) SaveImages(images []string, dir string, platform v1.
 		ArchitectureChoice:          platform.Architecture,
 		OSChoice:                    platform.OS,
 		VariantChoice:               platform.Variant,
-		DockerInsecureSkipTLSVerify: itype.OptionalBoolTrue,
+		DockerInsecureSkipTLSVerify: itype.NewOptionalBool(httputils.InsecureTLS()),
 	}
 	eg, _ := errgroup.WithContext(is.ctx)
 	numCh := make(chan struct{}, is.maxPullProcs)

@@ -39,7 +39,7 @@ func newDefaultLoginReply() loginReply {
 			AcceptRepositories: true,
 		},
 		getLogin:  true,
-		tlsVerify: false,
+		tlsVerify: true,
 	}
 }
 

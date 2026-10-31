@@ -64,7 +64,7 @@ func newDefaultFromReply() *fromReply {
 		authfile:  auth.GetDefaultAuthFile(),
 		format:    defaultFormat(),
 		pull:      "true",
-		tlsVerify: false,
+		tlsVerify: true,
 		FromAndBudResults: &buildahcli.FromAndBudResults{
 			Devices:    defaultContainerConfig.Containers.Devices,
 			DNSSearch:  defaultContainerConfig.Containers.DNSSearches,

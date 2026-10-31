@@ -122,7 +122,7 @@ func flagsInBuildCommandToBeHidden() []string {
 }
 
 func setDefaultTLSVerifyFlag(c *cobra.Command) error {
-	return setDefaultFlagIfNotChanged(c, "tls-verify", "false")
+	return setDefaultFlagIfNotChanged(c, "tls-verify", "true")
 }
 
 func setDefaultSaveImageFlag(c *cobra.Command) error {
@@ -156,10 +156,10 @@ func setDefaultFlagIfNotChanged(c *cobra.Command, k, v string) error {
 }
 
 // setDefaultSystemContext use only when tls-verify flag not present.
+// Certificate verification stays enabled by default; commands that talk to an
+// insecure registry must expose and pass --tls-verify=false explicitly.
 func setDefaultSystemContext(sc *types.SystemContext) {
-	sc.DockerInsecureSkipTLSVerify = types.NewOptionalBool(true)
-	sc.OCIInsecureSkipTLSVerify = true
-	sc.DockerDaemonInsecureSkipTLSVerify = true
+	_ = sc
 }
 
 func bailOnError(err error, format string, a ...interface{}) { // nolint: golint,goprintffuncname

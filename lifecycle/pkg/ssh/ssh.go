@@ -144,6 +144,10 @@ func newFromOptions(opt *Option, opts ...OptionFunc) (*Client, error) {
 	for i := range opts {
 		opts[i](opt)
 	}
+	if opt.hostKeyCallback == nil {
+		// Fail closed: a manually built Option must still verify host keys.
+		opt.hostKeyCallback = opt.hostKeyVerifier()
+	}
 
 	config := &ssh.ClientConfig{
 		Config: ssh.Config{
