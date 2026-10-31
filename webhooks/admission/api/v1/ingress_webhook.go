@@ -119,7 +119,7 @@ func (v *IngressValidator) SetupWithManager(mgr ctrl.Manager) error {
 			ingress := obj.(*netv1.Ingress) //nolint:errcheck // IndexField is registered for Ingress objects only
 			hosts := make([]string, 0, len(ingress.Spec.Rules))
 			for _, rule := range ingress.Spec.Rules {
-				hosts = append(hosts, rule.Host)
+				hosts = append(hosts, normalizeFQDN(rule.Host))
 			}
 			return hosts
 		},
@@ -219,6 +219,10 @@ func (v *IngressValidator) validate(ctx context.Context, i *netv1.Ingress) error
 		return nil
 	}
 
+	if err := v.checkHosts(i); err != nil {
+		return err
+	}
+
 	checks := []func(context.Context, *netv1.Ingress, *netv1.IngressRule) error{v.checkDeny}
 	if v.CnameCheckEnabled {
 		checks = append(checks, v.checkCname)
@@ -239,6 +243,58 @@ func (v *IngressValidator) validate(ctx context.Context, i *netv1.Ingress) error
 func normalizeFQDN(s string) string {
 	s = strings.TrimSpace(strings.ToLower(s))
 	return strings.TrimSuffix(s, ".")
+}
+
+// validateNoWildcardHost rejects wildcard hosts: a tenant with
+// "*.cloud.sealos.io" would otherwise hijack every unclaimed subdomain.
+func validateNoWildcardHost(host string) error {
+	if strings.Contains(host, "*") {
+		return fmt.Errorf(
+			code.MessageFormat,
+			code.IngressFailedWildcardHostCheck,
+			"wildcard ingress host "+host+" is not allowed",
+		)
+	}
+	return nil
+}
+
+func (v *IngressValidator) checkHosts(i *netv1.Ingress) error {
+	for _, rule := range i.Spec.Rules {
+		if err := validateNoWildcardHost(rule.Host); err != nil {
+			return err
+		}
+	}
+	for _, tls := range i.Spec.TLS {
+		for _, host := range tls.Hosts {
+			if err := validateNoWildcardHost(host); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// hostsOverlap reports whether two ingress hosts claim the same DNS names.
+// Comparison is done on normalized names at label boundaries (dns.IsSubDomain)
+// and treats a pre-existing wildcard entry as covering its subdomains.
+func hostsOverlap(a, b string) bool {
+	a, b = normalizeFQDN(a), normalizeFQDN(b)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	if strings.HasPrefix(a, "*.") {
+		parent := strings.TrimPrefix(a, "*.")
+		// A wildcard certificate/rule does not cover its own apex.
+		return b != parent && dns.IsSubDomain(parent, b)
+	}
+	if strings.HasPrefix(b, "*.") {
+		parent := strings.TrimPrefix(b, "*.")
+		return a != parent && dns.IsSubDomain(parent, a)
+	}
+	return false
 }
 
 func (v *IngressValidator) checkDeny(
@@ -298,11 +354,16 @@ func (v *IngressValidator) checkCname(
 		ilog.Error(err, "can not verify ingress host "+rule.Host+", lookup cname error")
 		return err
 	}
-	// remove last dot
-	cname = strings.TrimSuffix(cname, ".")
+	// remove last dot and normalize case
+	cname = normalizeFQDN(cname)
+	host := normalizeFQDN(rule.Host)
 	for _, domain := range v.CnameDomains {
-		// check if ingress host is end with domain
-		if strings.HasSuffix(rule.Host, domain) {
+		d := normalizeFQDN(domain)
+		if d == "" {
+			continue
+		}
+		// check if ingress host is a subdomain of the allowed domain
+		if dns.IsSubDomain(d, host) {
 			ilog.Info(
 				"ingress host is end with "+domain+", skip validate",
 				"ingress namespace",
@@ -312,8 +373,8 @@ func (v *IngressValidator) checkCname(
 			)
 			return nil
 		}
-		// if cname is not end with domain, return error
-		if strings.HasSuffix(cname, domain) {
+		// if cname is not a subdomain of the allowed domain, return error
+		if dns.IsSubDomain(d, cname) {
 			ilog.Info(
 				"ingress host "+rule.Host+" is cname to "+cname+", pass checkCname validate",
 				"ingress namespace",
@@ -341,17 +402,28 @@ func (v *IngressValidator) checkOwner(
 	i *netv1.Ingress,
 	rule *netv1.IngressRule,
 ) error {
+	host := normalizeFQDN(rule.Host)
 	iList := &netv1.IngressList{}
 	if err := v.cache.List(
 		ctx,
 		iList,
-		client.MatchingFields{IngressHostIndex: rule.Host},
+		client.MatchingFields{IngressHostIndex: host},
 	); err != nil {
 		ilog.Error(err, "can not verify ingress host "+rule.Host+", list ingress error")
 		return fmt.Errorf(code.MessageFormat, code.IngressFailedOwnerCheck, err.Error())
 	}
 
 	for _, exitsIngress := range iList.Items {
+		owned := false
+		for _, existingRule := range exitsIngress.Spec.Rules {
+			if hostsOverlap(existingRule.Host, rule.Host) {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			continue
+		}
 		if exitsIngress.Namespace != i.Namespace {
 			ilog.Info(
 				"ingress host "+rule.Host+" is owned by "+i.Namespace+", failed validate",
