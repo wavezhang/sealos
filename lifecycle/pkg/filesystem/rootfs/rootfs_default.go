@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sync/errgroup"
 
@@ -204,14 +205,40 @@ func findLocalSealctl() string {
 	if path, err := osexec.LookPath("sealctl"); err == nil {
 		candidates = append(candidates, path)
 	}
-	candidates = append(candidates, "/tmp/sealctl")
 
 	for _, candidate := range candidates {
+		if unsafeSealctl(candidate) {
+			logger.Warn("ignoring sealctl candidate %s: not owned by the current user or writable by others", candidate)
+			continue
+		}
 		if isExecutableFile(candidate) {
 			return candidate
 		}
 	}
 	return ""
+}
+
+// unsafeSealctl reports whether path must not be trusted as the local sealctl
+// binary. The binary is copied to cluster nodes and executed as root, so a
+// candidate that another user can replace would be a local privilege
+// escalation. World-writable directories such as /tmp are never searched.
+func unsafeSealctl(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return true
+	}
+	if info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+		return true
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		if int(stat.Uid) != os.Geteuid() {
+			return true
+		}
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return true
+	}
+	return false
 }
 
 func isExecutableFile(path string) bool {
