@@ -22,6 +22,7 @@ package authz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,7 +47,11 @@ type Identity struct {
 
 // Authorizer answers whether an identity may perform an operation.
 type Authorizer interface {
-	CanCreateServiceAccountToken(ctx context.Context, identity Identity, namespace string) (bool, error)
+	CanCreateServiceAccountToken(
+		ctx context.Context,
+		identity Identity,
+		namespace string,
+	) (bool, error)
 	CanUpdateUser(ctx context.Context, identity Identity, user string) (bool, error)
 	CanDeleteUser(ctx context.Context, identity Identity, user string) (bool, error)
 }
@@ -107,7 +112,7 @@ func (a *ClientAuthorizer) allowed(
 	attributes *authorizationv1.ResourceAttributes,
 ) (bool, error) {
 	if a == nil || a.Client == nil {
-		return false, fmt.Errorf("authorization client is not configured")
+		return false, errors.New("authorization client is not configured")
 	}
 	if identity.Username == "" {
 		return false, nil
@@ -140,7 +145,7 @@ func UsersNamespace(user string) string {
 // namespace name.
 func ValidateUserName(user string) error {
 	if user == "" {
-		return fmt.Errorf("user must not be empty")
+		return errors.New("user must not be empty")
 	}
 	if errs := validation.IsDNS1123Label(user); len(errs) > 0 {
 		return fmt.Errorf("invalid user %q: %s", user, strings.Join(errs, ", "))

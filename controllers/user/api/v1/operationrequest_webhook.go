@@ -129,7 +129,7 @@ func (r ReqValidator) ValidateCreate(
 		return admission.Warnings{message}, errors.New(message)
 	}
 	if !allowed {
-		message := fmt.Sprintf("operation request denied: %s", reason)
+		message := "operation request denied: " + reason
 		return admission.Warnings{message}, errors.New(message)
 	}
 
@@ -202,7 +202,7 @@ func (r ReqValidator) ValidateUpdate(
 			return admission.Warnings{message}, errors.New(message)
 		}
 		if !allowed {
-			message := fmt.Sprintf("operation request update denied: %s", reason)
+			message := "operation request update denied: " + reason
 			return admission.Warnings{message}, errors.New(message)
 		}
 	}

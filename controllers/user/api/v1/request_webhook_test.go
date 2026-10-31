@@ -43,11 +43,19 @@ func (a allowAuthorizer) CanCreateServiceAccountToken(
 	return a.allowToken, nil
 }
 
-func (a allowAuthorizer) CanUpdateUser(_ context.Context, _ authz.Identity, _ string) (bool, error) {
+func (a allowAuthorizer) CanUpdateUser(
+	_ context.Context,
+	_ authz.Identity,
+	_ string,
+) (bool, error) {
 	return a.allowManage, nil
 }
 
-func (a allowAuthorizer) CanDeleteUser(_ context.Context, _ authz.Identity, _ string) (bool, error) {
+func (a allowAuthorizer) CanDeleteUser(
+	_ context.Context,
+	_ authz.Identity,
+	_ string,
+) (bool, error) {
 	return a.allowDelete, nil
 }
 
@@ -98,7 +106,9 @@ func TestOperationRequestWebhookRecordsAuthenticatedCreator(t *testing.T) {
 	); err != nil {
 		t.Fatalf("mutate request: %v", err)
 	}
-	if creator := request.Annotations[UserAnnotationCreatorKey]; creator != authz.ServiceAccountUsername("alice") {
+	if creator := request.Annotations[UserAnnotationCreatorKey]; creator != authz.ServiceAccountUsername(
+		"alice",
+	) {
 		t.Fatalf("creator = %q, want authenticated caller", creator)
 	}
 }
@@ -233,7 +243,6 @@ func TestDeleteRequestWebhookCreateAuthorization(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			validator := DeleteRequestValidator{

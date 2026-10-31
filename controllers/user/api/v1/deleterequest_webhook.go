@@ -112,7 +112,7 @@ func (r DeleteRequestValidator) ValidateCreate(
 		return admission.Warnings{message}, errors.New(message)
 	}
 	if !allowed {
-		message := fmt.Sprintf("delete request denied: %s", reason)
+		message := "delete request denied: " + reason
 		return admission.Warnings{message}, errors.New(message)
 	}
 	return admission.Warnings{}, nil
@@ -157,7 +157,7 @@ func (r DeleteRequestValidator) ValidateUpdate(
 			return admission.Warnings{message}, errors.New(message)
 		}
 		if !allowed {
-			message := fmt.Sprintf("delete request update denied: %s", reason)
+			message := "delete request update denied: " + reason
 			return admission.Warnings{message}, errors.New(message)
 		}
 	}

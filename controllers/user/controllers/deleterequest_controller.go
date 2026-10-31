@@ -174,7 +174,8 @@ func (r *DeleteRequestReconciler) reconcile(
 		)
 		return ctrl.Result{}, err
 	}
-	if creator := ns.Annotations[userv1.UserAnnotationCreatorKey]; creator != "" && creator != user.Name {
+	if creator := ns.Annotations[userv1.UserAnnotationCreatorKey]; creator != "" &&
+		creator != user.Name {
 		reason := fmt.Sprintf(
 			"namespace %s belongs to user %s, not %s",
 			ns.Name,

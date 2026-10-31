@@ -200,10 +200,18 @@ func (allowAllAuthorizer) CanCreateServiceAccountToken(
 	return true, nil
 }
 
-func (allowAllAuthorizer) CanUpdateUser(_ context.Context, _ authz.Identity, _ string) (bool, error) {
+func (allowAllAuthorizer) CanUpdateUser(
+	_ context.Context,
+	_ authz.Identity,
+	_ string,
+) (bool, error) {
 	return true, nil
 }
 
-func (allowAllAuthorizer) CanDeleteUser(_ context.Context, _ authz.Identity, _ string) (bool, error) {
+func (allowAllAuthorizer) CanDeleteUser(
+	_ context.Context,
+	_ authz.Identity,
+	_ string,
+) (bool, error) {
 	return true, nil
 }

@@ -89,8 +89,10 @@ func TestOperationRequestDecision(t *testing.T) {
 			wantTokenChecks: 1,
 		},
 		{
-			name:            "user manager without token permission",
-			identity:        Identity{Username: "system:serviceaccount:sealos-system:desktop-frontend"},
+			name: "user manager without token permission",
+			identity: Identity{
+				Username: "system:serviceaccount:sealos-system:desktop-frontend",
+			},
 			targetUser:      "bob",
 			namespace:       UsersNamespace("alice"),
 			authorizer:      &fakeAuthorizer{manageAllowed: true},
@@ -124,7 +126,6 @@ func TestOperationRequestDecision(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			allowed, reason, err := OperationRequestDecision(
@@ -184,7 +185,6 @@ func TestDeleteRequestDecision(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			allowed, reason, err := DeleteRequestDecision(
