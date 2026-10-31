@@ -48,24 +48,50 @@ func (c canceledContextClient) Get(
 	return errors.New("service account read did not receive the canceled context")
 }
 
-func TestNewConfigNormalizesBelowMinimumExpiration(t *testing.T) {
+func TestNewConfigClampsExpiration(t *testing.T) {
 	t.Parallel()
 
-	cfg := NewConfig("alice", "", 7_200)
-	if cfg.expirationSeconds != userv1.DefaultCSRExpirationSeconds {
-		t.Fatalf(
-			"config expiration = %d, want minimum %d",
-			cfg.expirationSeconds,
-			userv1.DefaultCSRExpirationSeconds,
-		)
+	tests := []struct {
+		name  string
+		value int32
+		want  int32
+	}{
+		{
+			name:  "below floor uses the default",
+			value: 100,
+			want:  userv1.DefaultCSRExpirationSeconds,
+		},
+		{
+			name:  "in range is preserved",
+			value: 7_200,
+			want:  7_200,
+		},
+		{
+			name:  "legacy default is clamped to the maximum",
+			value: 1_000_000_000,
+			want:  userv1.MaxCSRExpirationSeconds,
+		},
 	}
-	sac := cfg.WithServiceAccountConfig("user-system", nil)
-	if got := sac.tokenRequestExpirationSeconds(); got != userv1.DefaultCSRExpirationSeconds {
-		t.Fatalf(
-			"token request expiration = %d, want minimum %d",
-			got,
-			userv1.DefaultCSRExpirationSeconds,
-		)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := NewConfig("alice", "", tt.value)
+			if cfg.expirationSeconds != tt.want {
+				t.Fatalf(
+					"config expiration = %d, want %d",
+					cfg.expirationSeconds,
+					tt.want,
+				)
+			}
+			sac := cfg.WithServiceAccountConfig("user-system", nil)
+			if got := sac.tokenRequestExpirationSeconds(); got != tt.want {
+				t.Fatalf(
+					"token request expiration = %d, want %d",
+					got,
+					tt.want,
+				)
+			}
+		})
 	}
 }
 

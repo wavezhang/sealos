@@ -606,7 +606,7 @@ func TestTransformUserInfersLegacyRefreshFromObservedRotation(t *testing.T) {
 	}
 	refreshAt := transformedAs[*userv1.User](t, transformed).Status.KubeConfigRefreshAt
 	want := metav1.NewTime(
-		rotation.Add(time.Duration(userv1.DefaultCSRExpirationSeconds) * time.Second * 8 / 10),
+		rotation.Add(time.Duration(10*60) * time.Second * 8 / 10),
 	)
 	if refreshAt == nil || !refreshAt.Equal(&want) {
 		t.Fatalf("legacy fallback refresh time = %v, want %v", refreshAt, want)
@@ -659,7 +659,7 @@ func TestTransformUserInfersLegacyRefreshWhenAuthInfoIsUnrecognized(t *testing.T
 	}
 	refreshAt := transformedAs[*userv1.User](t, transformed).Status.KubeConfigRefreshAt
 	want := metav1.NewTime(
-		rotation.Add(time.Duration(userv1.DefaultCSRExpirationSeconds) * time.Second * 8 / 10),
+		rotation.Add(time.Duration(10*60) * time.Second * 8 / 10),
 	)
 	if refreshAt == nil || !refreshAt.Equal(&want) {
 		t.Fatalf("legacy refresh time = %v, want %v", refreshAt, want)

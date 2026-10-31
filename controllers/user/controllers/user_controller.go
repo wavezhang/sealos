@@ -74,6 +74,10 @@ const (
 	roleSyncReadyCondition           = userv1.ConditionType("RoleSyncReady")
 	roleBindingReadyCondition        = userv1.ConditionType("RoleBindingSyncReady")
 	clusterRoleBindingReadyCondition = userv1.ConditionType("ClusterRoleBindingSyncReady")
+	// kubeConfigRenewalDivisor divides the issued credential lifetime to obtain
+	// the renewal point. Renewing at half of the lifetime keeps the previous
+	// token valid while the replacement is requested and persisted.
+	kubeConfigRenewalDivisor = 2
 )
 
 // UserReconciler reconciles a User object
@@ -380,6 +384,51 @@ func (r *UserReconciler) kubeConfigSyncDue(user *userv1.User) bool {
 		return true
 	}
 	return !user.Status.KubeConfigRefreshAt.After(time.Now())
+}
+
+// kubeConfigLifetimePolicyCurrent reports whether the observed issuance already
+// used the current lifetime policy. Values above the hard maximum were issued
+// by older releases (the legacy default was 1_000_000_000 seconds) and must be
+// re-issued even though the stored User object still carries the old value.
+func kubeConfigLifetimePolicyCurrent(user *userv1.User) bool {
+	if user == nil {
+		return true
+	}
+	observed := user.Status.ObservedCSRExpirationSeconds
+	if observed == 0 {
+		observed = user.Spec.CSRExpirationSeconds
+	}
+	return observed <= userv1.MaxCSRExpirationSeconds
+}
+
+// kubeConfigRenewalDue reports whether the persisted kubeconfig token must be
+// re-issued because its stored refresh deadline is missing or reached, or
+// because the token predates the current lifetime policy. Manual rotation is
+// reported separately by userKubeConfigNeedsRotation.
+func kubeConfigRenewalDue(user *userv1.User, now time.Time) bool {
+	if user == nil {
+		return true
+	}
+	if !kubeConfigLifetimePolicyCurrent(user) {
+		return true
+	}
+	if user.Status.KubeConfigRefreshAt == nil || user.Status.KubeConfigRefreshAt.IsZero() {
+		return true
+	}
+	return !user.Status.KubeConfigRefreshAt.After(now)
+}
+
+// kubeConfigRefreshRequired combines scheduled renewal with a manual rotation
+// request so both paths keep sharing a single kubeconfig issuance code path.
+func kubeConfigRefreshRequired(user *userv1.User, now time.Time) bool {
+	return kubeConfigRenewalDue(user, now) || userKubeConfigNeedsRotation(user)
+}
+
+// kubeConfigRefreshTime returns when a token issued at issuedAt and expiring at
+// expiresAt should be renewed: half of its lifetime, so the replacement is in
+// place well before the old token expires.
+func kubeConfigRefreshTime(issuedAt, expiresAt time.Time) time.Time {
+	return issuedAt.Add(expiresAt.Sub(issuedAt) / kubeConfigRenewalDivisor)
 }
 
 func namespaceMatchesUser(
@@ -962,19 +1011,38 @@ func (r *UserReconciler) syncKubeConfigIfNeeded(
 	user *userv1.User,
 	state *userReconcileState,
 ) {
-	if r.cache != nil && !kubeConfigSyncFailed(user) &&
-		!r.kubeConfigSyncDue(user) &&
-		csrExpirationStatusMatches(
-			user.Spec.CSRExpirationSeconds,
-			user.Status.ObservedCSRExpirationSeconds,
-		) &&
-		user.Status.KubeConfigRefreshAt != nil &&
-		!userKubeConfigNeedsRotation(user) && r.boundTokenSecretMatches(ctx, user, state) {
+	if r.kubeConfigCurrent(ctx, user, state) {
 		r.markConditionReadyIfNeeded(user, kubeConfigReadyCondition)
 		return
 	}
 	state.kubeConfigSyncAttempted = true
 	r.syncKubeConfig(ctx, user, state)
+}
+
+// kubeConfigCurrent reports whether the persisted kubeconfig can be kept. The
+// cached User projection drops the kubeconfig payload, so a missing token is
+// represented by a missing refresh deadline (the cache also infers that
+// deadline for legacy JWT-backed kubeconfigs). A token is renewed when that
+// deadline is missing or reached, when it was issued under the legacy lifetime
+// policy, when a rotation is requested, or when the bound Secret was recreated.
+func (r *UserReconciler) kubeConfigCurrent(
+	ctx context.Context,
+	user *userv1.User,
+	state *userReconcileState,
+) bool {
+	if r.cache == nil || kubeConfigSyncFailed(user) {
+		return false
+	}
+	if r.kubeConfigSyncDue(user) || kubeConfigRefreshRequired(user, time.Now()) {
+		return false
+	}
+	if !csrExpirationStatusMatches(
+		user.Spec.CSRExpirationSeconds,
+		user.Status.ObservedCSRExpirationSeconds,
+	) {
+		return false
+	}
+	return r.boundTokenSecretMatches(ctx, user, state)
 }
 
 func (r *UserReconciler) boundTokenSecretMatches(
@@ -1562,7 +1630,7 @@ func (r *UserReconciler) syncKubeConfig(
 		secretUID = string(boundSecret.UID)
 	}
 	state.tokenExpirationDeadline = &tokenExpiresAt
-	refreshAt := metav1.NewTime(time.Now().Add(time.Until(tokenExpiresAt.Time) * 8 / 10))
+	refreshAt := metav1.NewTime(kubeConfigRefreshTime(time.Now(), tokenExpiresAt.Time))
 	user.Status.KubeConfigRefreshAt = &refreshAt
 	user.Status.ObservedKubeConfigSecretUID = secretUID
 	if r.shouldRotateKubeConfig(user) {
@@ -1782,7 +1850,9 @@ func nextKubeConfigRequeueDuration(
 ) time.Duration {
 	if state != nil && state.tokenExpirationDeadline != nil &&
 		!state.tokenExpirationDeadline.IsZero() {
-		refreshDuration := time.Until(state.tokenExpirationDeadline.Time) * 8 / 10
+		refreshDuration := time.Until(
+			state.tokenExpirationDeadline.Time,
+		) / kubeConfigRenewalDivisor
 		if refreshDuration <= 0 {
 			return time.Second
 		}

@@ -173,9 +173,10 @@ users:
 		It("new kubeconfig", func() {
 			user := &v1.User{}
 			user.Name = "cuisongliu"
-			defaultExpirationDuration := int32(100000000)
+			defaultExpirationDuration := int32(3_600)
 			user.Spec.CSRExpirationSeconds = defaultExpirationDuration
-			defaultConfig := kubeconfig.NewConfig("cuisongliu", "", 100000000)
+			user.Status.ObservedCSRExpirationSeconds = defaultExpirationDuration
+			defaultConfig := kubeconfig.NewConfig("cuisongliu", "", defaultExpirationDuration)
 			config, err := defaultConfig.WithServiceAccountConfig("default", nil).
 				Apply(cfg, k8sClient)
 			Expect(err).ToNot(HaveOccurred())

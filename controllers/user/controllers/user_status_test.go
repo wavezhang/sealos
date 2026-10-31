@@ -269,27 +269,32 @@ func TestKubeConfigSyncDueUsesPersistedRefreshAt(t *testing.T) {
 	}
 }
 
-func TestCSRExpirationStatusMatchingUsesMinimumForLowValues(t *testing.T) {
+func TestCSRExpirationStatusMatchingUsesIssuanceClamping(t *testing.T) {
 	t.Parallel()
-	minimum := userv1.DefaultCSRExpirationSeconds
-	if !csrExpirationStatusMatches(7_200, 0) {
-		t.Fatal("low spec and empty observed expiration should use the minimum")
+	// Values below the floor and empty values normalize to the default, in-range
+	// values are preserved, and the legacy 1_000_000_000 default normalizes to
+	// the hard maximum.
+	if !csrExpirationStatusMatches(0, userv1.DefaultCSRExpirationSeconds) {
+		t.Fatal("empty spec should match the default observed expiration")
 	}
-	if !csrExpirationStatusMatches(7_200, minimum) {
-		t.Fatal("low spec and minimum observed expiration should match")
+	if !csrExpirationStatusMatches(100, userv1.DefaultCSRExpirationSeconds) {
+		t.Fatal("below-floor spec should match the default observed expiration")
 	}
-	if csrExpirationStatusMatches(7_200, minimum+1) {
-		t.Fatal("low spec should not match a different above-minimum observed expiration")
+	if csrExpirationStatusMatches(7_200, 0) {
+		t.Fatal("in-range spec should not match an empty observed expiration")
 	}
-	if csrExpirationStatusMatches(minimum+1, 7_200) {
-		t.Fatal("spec above minimum should detect a different effective expiration")
+	if !csrExpirationStatusMatches(7_200, 7_200) {
+		t.Fatal("equal in-range expirations should match")
 	}
-	if !csrExpirationStatusMatches(minimum+1, minimum+1) {
-		t.Fatal("equal above-minimum expirations should match")
+	if csrExpirationStatusMatches(7_200, 7_201) {
+		t.Fatal("different in-range expirations should not match")
+	}
+	if !csrExpirationStatusMatches(userv1.MaxCSRExpirationSeconds, 1_000_000_000) {
+		t.Fatal("legacy default and maximum should normalize to the same value")
 	}
 }
 
-func TestUserStatusNeedsSyncIgnoresBelowMinimumExpirationDrift(t *testing.T) {
+func TestUserStatusNeedsSyncIgnoresInRangeExpirationDrift(t *testing.T) {
 	t.Parallel()
 	user := &userv1.User{
 		ObjectMeta: metav1.ObjectMeta{Name: "alice", Generation: 1},
@@ -305,7 +310,7 @@ func TestUserStatusNeedsSyncIgnoresBelowMinimumExpirationDrift(t *testing.T) {
 		},
 	}
 	if userStatusNeedsSync(user) {
-		t.Fatal("below-minimum expiration drift triggered a status sync")
+		t.Fatal("in-range expiration drift triggered a status sync")
 	}
 	if user.Status.ObservedCSRExpirationSeconds != 7_200 {
 		t.Fatalf(
@@ -324,11 +329,10 @@ func TestSetObservedCSRExpirationSecondsNormalizesOnlyDuringRefresh(t *testing.T
 		},
 	}
 	setObservedCSRExpirationSeconds(user)
-	if user.Status.ObservedCSRExpirationSeconds != userv1.DefaultCSRExpirationSeconds {
+	if user.Status.ObservedCSRExpirationSeconds != 7_200 {
 		t.Fatalf(
-			"observed expiration = %d, want minimum %d",
+			"observed expiration = %d, want in-range value 7200",
 			user.Status.ObservedCSRExpirationSeconds,
-			userv1.DefaultCSRExpirationSeconds,
 		)
 	}
 
@@ -340,6 +344,16 @@ func TestSetObservedCSRExpirationSecondsNormalizesOnlyDuringRefresh(t *testing.T
 			"observed expiration = %d, want %d",
 			user.Status.ObservedCSRExpirationSeconds,
 			want,
+		)
+	}
+
+	user.Spec.CSRExpirationSeconds = 1_000_000_000
+	setObservedCSRExpirationSeconds(user)
+	if user.Status.ObservedCSRExpirationSeconds != userv1.MaxCSRExpirationSeconds {
+		t.Fatalf(
+			"observed expiration = %d, want maximum %d",
+			user.Status.ObservedCSRExpirationSeconds,
+			userv1.MaxCSRExpirationSeconds,
 		)
 	}
 }
