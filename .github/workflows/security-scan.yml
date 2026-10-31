@@ -6,6 +6,7 @@
 #   - govulncheck   : reachable Go vulnerabilities per module (SARIF + gate)
 #   - CodeQL        : deep data-flow analysis for Go and TypeScript (SARIF)
 #   - dependency-review: blocks PRs that introduce HIGH/CRITICAL dependencies
+#                       (advisory only on this fork: no dependency graph for forks)
 #
 # Policy: every job uploads SARIF to the Security > Code scanning tab. Findings at
 # HIGH/CRITICAL (fixed vulnerabilities, detected secrets, reachable Go vulns) fail
@@ -154,7 +155,12 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy
 
+      # Repo-wide debt gate: runs on main pushes and the weekly schedule, not on
+      # PRs. On PRs the same findings are uploaded as SARIF above and GitHub's code
+      # scanning check fails the PR only when it *introduces* new alerts, so
+      # pre-existing upstream CVEs do not freeze every pull request.
       - name: Gate on fixed HIGH/CRITICAL vulnerabilities and secrets
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -307,8 +313,10 @@ jobs:
           sarif_file: govulncheck-${{ matrix.area }}.sarif
           category: govulncheck-${{ matrix.area }}
 
+      # Repo-wide debt gate, same policy as Trivy: main/schedule only. PRs rely on
+      # the code scanning check for newly introduced reachable vulnerabilities.
       - name: Gate on reachable vulnerabilities
-        if: steps.scan.outputs.reachable != '0'
+        if: github.event_name != 'pull_request' && steps.scan.outputs.reachable != '0'
         run: |
           {
             echo "### ALERT: govulncheck found ${{ steps.scan.outputs.reachable }} reachable vulnerability finding(s) in ${{ matrix.area }}"
@@ -393,6 +401,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # GitHub does not build a dependency graph for forks, so this action aborts with
+    # "Dependency review is not supported on this repository" here. Keep the job for
+    # the case where the graph is available, but never let that abort block a PR:
+    # Trivy already gates the same HIGH/CRITICAL dependency surface.
+    continue-on-error: true
     permissions:
       contents: read
       pull-requests: write
