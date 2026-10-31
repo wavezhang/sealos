@@ -14,7 +14,6 @@ export const removeCookie = (key: string) => {
 
 // Shared Cookie configuration
 const SHARED_AUTH_COOKIE_NAME = 'sealos_auth_token';
-const COOKIE_EXPIRY_DAYS = 7;
 
 // Get shared cookie domain (e.g., usw.sealos.io -> .sealos.io)
 export const getSharedCookieDomain = (): string | undefined => {
@@ -26,29 +25,63 @@ export const getSharedCookieDomain = (): string | undefined => {
   return undefined;
 };
 
-// Set shared authentication cookie
-export const setSharedAuthCookie = (globalToken: string): void => {
+// The shared auth cookie is issued by /api/auth/sharedCookie as HttpOnly; the
+// browser must never write it from JavaScript. These helpers only clean up
+// copies created by older releases.
+const removeLegacyCookieCopies = (): void => {
   const domain = getSharedCookieDomain();
-  const isHttps = window.location.protocol === 'https:';
-
-  const options: CookieAttributes = {
-    expires: COOKIE_EXPIRY_DAYS,
-    path: '/',
-    sameSite: isHttps ? 'none' : 'lax',
-    secure: isHttps
-  };
-
-  if (domain) options.domain = domain;
-  Cookies.set(SHARED_AUTH_COOKIE_NAME, globalToken, options);
+  if (domain) Cookies.remove(SHARED_AUTH_COOKIE_NAME, { path: '/', domain });
+  Cookies.remove(SHARED_AUTH_COOKIE_NAME, { path: '/' });
 };
 
-// Clear shared authentication cookie
+const postSharedAuthCookie = async (token: string) => {
+  const response = await fetch('/api/auth/sharedCookie', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { Authorization: encodeURIComponent(token) }
+  });
+  return response.ok;
+};
+
+// Set shared authentication cookie. The token is handed to the server, which
+// responds with an HttpOnly; SameSite=Lax; Secure (on HTTPS) cookie.
+export const setSharedAuthCookie = (globalToken: string): void => {
+  if (typeof window === 'undefined') return;
+  if (!globalToken) {
+    clearSharedAuthCookie();
+    return;
+  }
+  removeLegacyCookieCopies();
+  postSharedAuthCookie(globalToken).catch((error) => {
+    console.error('Failed to set shared auth cookie:', error);
+  });
+};
+
+// Clear shared authentication cookie (host-only and parent-domain variants).
 export const clearSharedAuthCookie = (): void => {
-  const domain = getSharedCookieDomain();
-  const options: CookieAttributes = { path: '/' };
-  if (domain) options.domain = domain;
-  Cookies.remove(SHARED_AUTH_COOKIE_NAME, options);
-  Cookies.remove(SHARED_AUTH_COOKIE_NAME, { path: '/' }); // Compatible with local development
+  if (typeof window === 'undefined') return;
+  removeLegacyCookieCopies();
+  fetch('/api/auth/sharedCookie', {
+    method: 'DELETE',
+    credentials: 'same-origin'
+  }).catch((error) => {
+    console.error('Failed to clear shared auth cookie:', error);
+  });
+};
+
+// Older releases stored the global token in a JavaScript-readable cookie.
+// Re-issue it as HttpOnly before removing the legacy copy.
+export const migrateLegacySharedAuthCookie = (): void => {
+  if (typeof window === 'undefined') return;
+  const legacyToken = Cookies.get(SHARED_AUTH_COOKIE_NAME);
+  if (!legacyToken) return;
+  postSharedAuthCookie(legacyToken)
+    .then((ok) => {
+      if (ok) removeLegacyCookieCopies();
+    })
+    .catch((error) => {
+      console.error('Failed to migrate shared auth cookie:', error);
+    });
 };
 
 export { SHARED_AUTH_COOKIE_NAME };

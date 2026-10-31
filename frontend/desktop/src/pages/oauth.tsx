@@ -362,7 +362,7 @@ export default function OAuth() {
     const handleOAuthLogin = async (provider: OauthProvider) => {
       persistMarketingQuery(marketingQuery);
       gtmLoginStart();
-      const state = generateState();
+      const state = generateState('LOGIN', undefined, provider);
       setProvider(provider);
 
       const oauthLogin = async ({ url }: { url: string }) => {

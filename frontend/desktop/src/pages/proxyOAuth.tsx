@@ -41,7 +41,9 @@ export default function Callback({ appConfig }: { appConfig: AppClientConfigType
           await fetch(`/api/auth/canProxy?domain=${encodeURIComponent(_url.host)}`, {})
         ).json()) as ApiResp<{ containDomain: boolean }>;
         if (!result.data?.containDomain) return;
-        const state = encodeURIComponent(generateState('PROXY', oauthProxyState));
+        const state = encodeURIComponent(
+          generateState('PROXY', oauthProxyState, oauthProvider as OauthProvider)
+        );
 
         if (oauthProvider === 'GITHUB') {
           await oauthLogin({

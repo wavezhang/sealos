@@ -48,19 +48,19 @@ export default function Callback() {
     persistMarketingQuery(marketingQuery);
     (async () => {
       try {
-        if (!provider || !['GITHUB', 'WECHAT', 'GOOGLE', 'OAUTH2'].includes(provider))
-          throw new Error('provider error');
         const { code, state } = router.query;
         if (!isString(code)) throw new Error('failed to get code');
+        if (!isString(state)) throw new Error('missing oauth state');
 
-        // Parse state to get action, default to LOGIN if state is not provided
-        let action = 'LOGIN';
-        let statePayload: string[] = [];
-        if (isString(state)) {
-          const compareResult = compareState(state);
-          action = compareResult.action;
-          statePayload = compareResult.statePayload;
-        }
+        // The state nonce must match a record created by this browser when the
+        // flow started. The action/provider come from that record only.
+        const compareResult = compareState(state);
+        if (!compareResult) throw new Error('invalid oauth state');
+        const action = compareResult.action;
+        const statePayload = compareResult.statePayload;
+        const oauthProvider = compareResult.provider || provider;
+        if (!oauthProvider || !['GITHUB', 'WECHAT', 'GOOGLE', 'OAUTH2'].includes(oauthProvider))
+          throw new Error('provider error');
 
         if (action === 'PROXY') {
           // proxy oauth2.0, PROXY_URL_[ACTION]_STATE
@@ -91,7 +91,7 @@ export default function Callback() {
         } else {
           // return
           if (action === 'LOGIN') {
-            const data = await signInRequest(provider)({
+            const data = await signInRequest(oauthProvider)({
               code,
               semData: getUserSemData() ?? undefined,
               adClickData: getAdClickData() ?? undefined
@@ -154,7 +154,7 @@ export default function Callback() {
                     gtmLoginSuccess({
                       user_type: 'new',
                       method: 'oauth2',
-                      oauth2Provider: provider,
+                      oauth2Provider: oauthProvider,
                       productUserTraits
                     });
                     const { setInitGuide } = useGuideModalStore.getState();
@@ -173,7 +173,7 @@ export default function Callback() {
                 gtmLoginSuccess({
                   user_type: 'existing',
                   method: 'oauth2',
-                  oauth2Provider: provider,
+                  oauth2Provider: oauthProvider,
                   productUserTraits
                 });
                 await handleLoginRedirect();
@@ -183,7 +183,7 @@ export default function Callback() {
             }
           } else if (action === 'BIND') {
             try {
-              const response = await bindRequest(provider)({ code });
+              const response = await bindRequest(oauthProvider)({ code });
               if (response.message === BIND_STATUS.RESULT_SUCCESS) {
                 setProvider();
                 await router.replace(appendMarketingQuery('/', marketingQuery));
@@ -191,7 +191,7 @@ export default function Callback() {
                 const code = response.data?.code;
                 if (!code) return;
                 setMergeUserData({
-                  providerType: provider as ProviderType,
+                  providerType: oauthProvider as ProviderType,
                   code
                 });
                 setMergeUserStatus(MergeUserStatus.CANMERGE);
@@ -215,7 +215,7 @@ export default function Callback() {
               }
             }
           } else if (action === 'UNBIND') {
-            await unBindRequest(provider)({ code });
+            await unBindRequest(oauthProvider)({ code });
             setProvider();
             await router.replace(appendMarketingQuery('/', marketingQuery));
           }

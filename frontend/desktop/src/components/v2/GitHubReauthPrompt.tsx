@@ -31,7 +31,7 @@ export function GitHubReauthPrompt({ isOpen, onClose }: { isOpen: boolean; onClo
     }
     clearSigninPageAction();
 
-    const state = generateState();
+    const state = generateState('LOGIN', undefined, 'GITHUB');
     setProvider('GITHUB');
 
     if (githubConf.proxyAddress) {
