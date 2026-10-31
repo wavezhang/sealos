@@ -42,6 +42,59 @@ func TestParseWorkspaceSubscriptionOperatorReqBindsPayApp(t *testing.T) {
 	}
 }
 
+func TestParseTransferAmountReqRejectsNonPositiveAmounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name       string
+		body       string
+		wantErr    bool
+		wantAmount int64
+	}{
+		{name: "negative", body: `{"amount":-1,"toUser":"victim"}`, wantErr: true},
+		{name: "zero", body: `{"amount":0,"toUser":"victim"}`, wantErr: true},
+		{
+			name:       "positive",
+			body:       `{"amount":100,"toUser":"receiver"}`,
+			wantAmount: 100,
+		},
+		{
+			name: "transfer all with zero amount",
+			body: `{"amount":0,"toUser":"receiver","transferAll":true}`,
+		},
+		{
+			name: "transfer all ignores supplied amount",
+			body: `{"amount":-100,"toUser":"receiver","transferAll":true}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPost,
+				"/transfer",
+				strings.NewReader(tc.body),
+			)
+			ctx.Request.Header.Set("Content-Type", "application/json")
+
+			req, err := ParseTransferAmountReq(ctx)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error for %s", tc.body)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if req.Amount != tc.wantAmount {
+				t.Fatalf("amount = %d, want %d", req.Amount, tc.wantAmount)
+			}
+		})
+	}
+}
+
 func TestParseWorkspaceSubscriptionOperatorReqLeavesPayAppValidationToPayEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

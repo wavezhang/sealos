@@ -71,7 +71,6 @@ func RegisterPayRouter() {
 		POST(helper.GetAppCostTimeRange, api.GetAppCostTimeRange).
 		POST(helper.GetInvoice, api.GetInvoice).
 		POST(helper.ApplyInvoice, api.ApplyInvoice).
-		POST(helper.SetStatusInvoice, api.SetStatusInvoice).
 		POST(helper.GetInvoicePayment, api.GetInvoicePayment).
 		POST(helper.UseGiftCode, api.UseGiftCode).
 		POST(helper.UserUsage, api.UserUsage).
@@ -98,6 +97,11 @@ func RegisterPayRouter() {
 		POST(helper.WorkspaceSubscriptionCardManage, api.CreateWorkspaceSubscriptionSetupIntent).
 		POST(helper.WorkspaceSubscriptionCardInfo, api.GetWorkspaceSubscriptionCardInfo).
 		POST(helper.WorkspaceSubscriptionInvoiceCancel, api.CancelWorkspaceSubscriptionInvoice)
+	// Internal invoice-service routes use HMAC signatures, not user JWTs.
+	router.Group(helper.GROUP+helper.InternalInvoiceGroup).
+		POST(helper.InternalSetStatusInvoice, api.InvoiceSignatureAuth(), api.SetStatusInvoice).
+		POST(helper.InternalGetInvoice, api.InvoiceSignatureAuth(), api.InternalGetInvoice).
+		POST(helper.InternalGetInvoicePayment, api.InvoiceSignatureAuth(), api.InternalGetInvoicePayment)
 	adminGroup := router.Group(helper.AdminGroup).
 		GET(helper.AdminGetAccountWithWorkspace, api.AdminGetAccountWithWorkspaceID).
 		GET(helper.AdminGetUserRealNameInfo, api.AdminGetUserRealNameInfo).

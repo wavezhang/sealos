@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -1120,11 +1121,48 @@ func ParseAuthTokenUser(c *gin.Context) (auth *helper.Auth, err error) {
 	return auth, err
 }
 
-func checkInvoiceToken(token string) error {
-	if token != dao.Cfg.InvoiceToken || token == "" {
-		return fmt.Errorf("invalid invoice token: %s", token)
+const internalInvoiceAuthKey = "internal-invoice-authenticated"
+
+var invoiceNonceCache = helper.NewInvoiceNonceCache()
+
+// InvoiceSignatureAuth authenticates the dedicated internal invoice routes.
+// Only the signature and timestamp/nonce headers are used; no shared bearer
+// token is accepted from the request body.
+func InvoiceSignatureAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+		if err != nil {
+			c.AbortWithStatusJSON(
+				http.StatusBadRequest,
+				gin.H{"error": "failed to read request body"},
+			)
+			return
+		}
+		err = helper.VerifyInvoiceSignature(
+			dao.Cfg.InvoiceToken,
+			c.GetHeader(helper.InvoiceTimestampHeader),
+			c.GetHeader(helper.InvoiceNonceHeader),
+			c.GetHeader(helper.InvoiceSignatureHeader),
+			body,
+			time.Now(),
+			invoiceNonceCache,
+		)
+		if err != nil {
+			c.AbortWithStatusJSON(
+				http.StatusUnauthorized,
+				gin.H{"error": fmt.Sprintf("authenticate error : %v", err)},
+			)
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+		c.Set(internalInvoiceAuthKey, true)
+		c.Next()
 	}
-	return nil
+}
+
+func isInternalInvoiceRequest(c *gin.Context) bool {
+	authenticated, ok := c.Get(internalInvoiceAuthKey)
+	return ok && authenticated == true
 }
 
 // ApplyInvoice
@@ -1202,6 +1240,28 @@ func GetInvoice(c *gin.Context) {
 		)
 		return
 	}
+	respondInvoice(c, req)
+}
+
+// InternalGetInvoice serves the invoice-service callback. It is only reachable
+// through InvoiceSignatureAuth and must never be registered as a user route.
+func InternalGetInvoice(c *gin.Context) {
+	if !isInternalInvoiceRequest(c) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticate error : internal route only"})
+		return
+	}
+	req, err := helper.ParseGetInvoiceReq(c)
+	if err != nil {
+		c.JSON(
+			http.StatusBadRequest,
+			gin.H{"error": fmt.Sprintf("failed to parse get invoice request: %v", err)},
+		)
+		return
+	}
+	respondInvoice(c, req)
+}
+
+func respondInvoice(c *gin.Context, req *helper.GetInvoiceReq) {
 	invoices, limits, err := dao.DBClient.GetInvoice(req)
 	if err != nil {
 		c.JSON(
@@ -1223,9 +1283,9 @@ func GetInvoice(c *gin.Context) {
 }
 
 func authenticateRequest(c *gin.Context, req helper.AuthReq) error {
-	if req.GetAuth() != nil && req.GetAuth().Token != "" {
-		return checkInvoiceToken(req.GetAuth().Token)
-	}
+	// User-facing endpoints always derive identity from the JWT. The former
+	// shared invoice token shortcut is only available on the dedicated
+	// internal routes protected by InvoiceSignatureAuth.
 	auth, err := ParseAuthTokenUser(c)
 	req.SetAuth(auth)
 	return err
@@ -1242,8 +1302,12 @@ func authenticateRequest(c *gin.Context, req helper.AuthReq) error {
 // @Failure 400 {object} map[string]interface{} "failed to parse set status invoice request"
 // @Failure 401 {object} map[string]interface{} "authenticate error"
 // @Failure 500 {object} map[string]interface{} "failed to set status invoice"
-// @Router /account/v1alpha1/invoice/set-status [post]
+// @Router /account/v1alpha1/internal/invoice/set-status [post]
 func SetStatusInvoice(c *gin.Context) {
+	if !isInternalInvoiceRequest(c) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticate error : internal route only"})
+		return
+	}
 	req, err := helper.ParseSetInvoiceStatusReq(c)
 	if err != nil {
 		c.JSON(
@@ -1252,17 +1316,6 @@ func SetStatusInvoice(c *gin.Context) {
 		)
 		return
 	}
-	auth := req.GetAuth()
-	if auth != nil {
-		err = checkInvoiceToken(auth.Token)
-	} else {
-		err = errors.New("no auth provided")
-	}
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": fmt.Sprintf("authenticate error : %v", err)})
-		return
-	}
-
 	if err := dao.DBClient.SetStatusInvoice(req); err != nil {
 		c.JSON(
 			http.StatusInternalServerError,
@@ -1303,7 +1356,29 @@ func GetInvoicePayment(c *gin.Context) {
 		)
 		return
 	}
-	payments, err := dao.DBClient.GetInvoicePayments(req.InvoiceID)
+	respondInvoicePayments(c, req.InvoiceID)
+}
+
+// InternalGetInvoicePayment serves the invoice-service callback. It is only
+// reachable through InvoiceSignatureAuth.
+func InternalGetInvoicePayment(c *gin.Context) {
+	if !isInternalInvoiceRequest(c) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticate error : internal route only"})
+		return
+	}
+	req, err := helper.ParseGetInvoiceReq(c)
+	if err != nil {
+		c.JSON(
+			http.StatusBadRequest,
+			gin.H{"error": fmt.Sprintf("failed to parse get invoice payment request: %v", err)},
+		)
+		return
+	}
+	respondInvoicePayments(c, req.InvoiceID)
+}
+
+func respondInvoicePayments(c *gin.Context, invoiceID string) {
+	payments, err := dao.DBClient.GetInvoicePayments(invoiceID)
 	if err != nil {
 		c.JSON(
 			http.StatusInternalServerError,

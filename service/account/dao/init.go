@@ -152,7 +152,8 @@ func Init(ctx context.Context) error {
 		logger.INFO,
 		Cfg.LocalRegionDomain+"-account-service",
 	)
-	fmt.Println("region-info: ", Cfg)
+	// Do not print Cfg: it contains the internal invoice signing secret.
+	fmt.Println("region-info: local region domain: ", Cfg.LocalRegionDomain)
 	jwtSecret := os.Getenv(helper.EnvJwtSecret)
 	if jwtSecret == "" {
 		return fmt.Errorf("empty jwt secret env: %s", helper.EnvJwtSecret)

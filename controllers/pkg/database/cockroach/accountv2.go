@@ -1216,6 +1216,23 @@ func AddDeductionAccount(tx *gorm.DB, userUID uuid.UUID, amount int64) error {
 	}).Error
 }
 
+// balanceDebit reports the amount that an update subtracts from balance and
+// whether the update is a debit. Callers express debits either as a negative
+// amount with add=true (transfers) or a positive amount with add=false.
+func balanceDebit(isDeduction, add bool, amount int64) (int64, bool) {
+	if isDeduction {
+		return 0, false
+	}
+	delta := amount
+	if !add {
+		delta = -amount
+	}
+	if delta < 0 {
+		return -delta, true
+	}
+	return 0, false
+}
+
 func (c *Cockroach) updateWithAccount(
 	userUID uuid.UUID,
 	isDeduction, add, isActive bool,
@@ -1236,7 +1253,13 @@ func (c *Cockroach) updateWithAccount(
 		exprs[`"activityBonus"`] = gorm.Expr(`"activityBonus" + ?`, amount)
 	}
 	exprs["updated_at"] = gorm.Expr("CURRENT_TIMESTAMP")
-	result := db.Model(&types.Account{}).Where(`"userUid" = ?`, userUID).Updates(exprs)
+	query := db.Model(&types.Account{}).Where(`"userUid" = ?`, userUID)
+	// Make debits conditional so concurrent requests cannot drive the balance
+	// below zero. A zero-row update rolls the surrounding transaction back.
+	if debit, ok := balanceDebit(isDeduction, add, amount); ok {
+		query = query.Where("balance >= ?", debit)
+	}
+	result := query.Updates(exprs)
 	return HandleUpdateResult(result, types.Account{}.TableName())
 }
 
@@ -2075,6 +2098,9 @@ func (c *Cockroach) transferAccount(
 	amount int64,
 	transferAll bool,
 ) (err error) {
+	if !transferAll && amount <= 0 {
+		return fmt.Errorf("invalid transfer amount %d: must be greater than zero", amount)
+	}
 	if from.UID == uuid.Nil || from.ID == "" {
 		userFrom, err := c.GetUser(from)
 		if err != nil {
