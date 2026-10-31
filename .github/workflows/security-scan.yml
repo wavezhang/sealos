@@ -8,11 +8,16 @@
 #   - dependency-review: blocks PRs that introduce HIGH/CRITICAL dependencies
 #                       (advisory only on this fork: no dependency graph for forks)
 #
-# Policy: every job uploads SARIF to the Security > Code scanning tab. Findings at
-# HIGH/CRITICAL (fixed vulnerabilities, detected secrets, reachable Go vulns) fail
-# the run so they actually block merges once branch protection requires this
-# workflow. Full-history secret findings are report-only to avoid re-flagging
-# upstream history that we cannot fix here.
+# Policy: every job uploads SARIF to the Security > Code scanning tab.
+#   - main pushes and the weekly schedule run the repo-wide gates: any fixed
+#     HIGH/CRITICAL vulnerability or reachable Go vulnerability fails the run, so
+#     the existing upstream debt stays visible and is tracked to zero.
+#   - pull requests only hard-fail on secrets in the commits they add; dependency
+#     and Go findings are left to GitHub's code scanning check, which fails a PR
+#     only when it introduces *new* alerts. Otherwise the hundreds of pre-existing
+#     upstream CVEs would block every pull request.
+#   - full-history secret findings are report-only (upstream history cannot be fixed
+#     here). Gates only block merges once branch protection requires this workflow.
 
 name: Security Scan
 
