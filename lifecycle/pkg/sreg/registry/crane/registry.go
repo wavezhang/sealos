@@ -19,15 +19,14 @@ package crane
 import (
 	"context"
 	"fmt"
+
 	"github.com/containers/image/v5/pkg/docker/config"
 	types2 "github.com/containers/image/v5/types"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-
-	"github.com/labring/sealos/pkg/sreg/utils/logger"
-
 	"github.com/labring/sealos/pkg/sreg/utils/http"
+	"github.com/labring/sealos/pkg/sreg/utils/logger"
 )
 
 func NewRegistry(domain string, authConfig registry.AuthConfig) (name.Registry, error) {
@@ -35,7 +34,7 @@ func NewRegistry(domain string, authConfig registry.AuthConfig) (name.Registry, 
 	domain = NormalizeRegistry(domain)
 	ping := func(v name.Registry) error {
 		au, _ := NewDefaultKeychain(map[string]registry.AuthConfig{domain: authConfig}).Resolve(v)
-		_, err := transport.NewWithContext(context.Background(), v, au, http.DefaultSkipVerify, nil)
+		_, err := transport.NewWithContext(context.Background(), v, au, http.Transport(), nil)
 		return err
 	}
 

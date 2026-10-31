@@ -22,18 +22,21 @@ import (
 	"time"
 
 	itype "github.com/containers/image/v5/types"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/labring/sealos/pkg/sreg/registry/handler"
 	"github.com/labring/sealos/pkg/sreg/registry/sync"
 	httputils "github.com/labring/sealos/pkg/sreg/utils/http"
 	"github.com/labring/sealos/pkg/sreg/utils/logger"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/errgroup"
 )
 
 const localhost = "127.0.0.1"
 
-func (is *tmpRegistryImage) SaveImages(images []string, dir string, platform v1.Platform) ([]string, error) {
+func (is *tmpRegistryImage) SaveImages(
+	images []string,
+	dir string,
+	platform v1.Platform,
+) ([]string, error) {
 	logger.Debug("trying to save images: %+v for platform: %s", images,
 		strings.Join([]string{platform.OS, platform.Architecture, platform.Variant}, ","))
 	config, err := handler.NewConfig(dir, 0)
@@ -57,7 +60,7 @@ func (is *tmpRegistryImage) SaveImages(images []string, dir string, platform v1.
 		ArchitectureChoice:          platform.Architecture,
 		OSChoice:                    platform.OS,
 		VariantChoice:               platform.Variant,
-		DockerInsecureSkipTLSVerify: itype.OptionalBoolTrue,
+		DockerInsecureSkipTLSVerify: itype.NewOptionalBool(httputils.InsecureTLS()),
 	}
 	eg, _ := errgroup.WithContext(is.ctx)
 	numCh := make(chan struct{}, is.maxPullProcs)

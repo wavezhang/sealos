@@ -25,19 +25,18 @@ import (
 
 	"github.com/containers/image/v5/copy"
 	"github.com/containers/image/v5/types"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/labring/sealos/pkg/sreg/registry/handler"
-	"github.com/labring/sealos/pkg/sreg/registry/sync"
-
 	"github.com/labring/sealos/pkg/constants"
 	"github.com/labring/sealos/pkg/exec"
 	"github.com/labring/sealos/pkg/filesystem"
+	"github.com/labring/sealos/pkg/sreg/registry/handler"
+	"github.com/labring/sealos/pkg/sreg/registry/sync"
+	sregutils "github.com/labring/sealos/pkg/sreg/utils/http"
 	"github.com/labring/sealos/pkg/ssh"
 	v2 "github.com/labring/sealos/pkg/types/v1beta1"
 	"github.com/labring/sealos/pkg/utils/file"
 	httputils "github.com/labring/sealos/pkg/utils/http"
 	"github.com/labring/sealos/pkg/utils/logger"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -88,7 +87,11 @@ func (s *impl) Sync(ctx context.Context, hosts ...string) error {
 		}
 		for _, host := range temporaryRegistries {
 			if err := s.cleanupRemoteTemporaryRegistry(host); err != nil {
-				logger.Debug("failed to cleanup remote temporary registry on host %s: %v", host, err)
+				logger.Debug(
+					"failed to cleanup remote temporary registry on host %s: %v",
+					host,
+					err,
+				)
 			}
 		}
 	}()
@@ -103,12 +106,19 @@ func (s *impl) Sync(ctx context.Context, hosts ...string) error {
 		}
 
 		if err := s.cleanupRemoteTemporaryRegistry(hosts[i]); err != nil {
-			logger.Debug("failed to cleanup stale remote temporary registry on host %s: %v", hosts[i], err)
+			logger.Debug(
+				"failed to cleanup stale remote temporary registry on host %s: %v",
+				hosts[i],
+				err,
+			)
 		}
 
 		registryServeCommand, ok := s.getRegistryServeCommand(hosts[i], defaultTemporaryPort)
 		if !ok {
-			logger.Debug("remote temporary registry is unsupported on host %s, fallback using ssh mode instead", hosts[i])
+			logger.Debug(
+				"remote temporary registry is unsupported on host %s, fallback using ssh mode instead",
+				hosts[i],
+			)
 			syncOptionChan <- &syncOption{target: hosts[i], typ: sshMode}
 			continue
 		}
@@ -120,9 +130,14 @@ func (s *impl) Sync(ctx context.Context, hosts ...string) error {
 			logger.Debug("running temporary registry on host %s", host)
 			if err := s.execer.CmdAsyncWithContext(ctx, host, registryServeCommand); err != nil {
 				// ignore expected signal killed error when context cancel
-				if !strings.Contains(err.Error(), "signal: killed") && !strings.Contains(err.Error(), "context canceled") {
+				if !strings.Contains(err.Error(), "signal: killed") &&
+					!strings.Contains(err.Error(), "context canceled") {
 					if waitRemoteTemporaryRegistry(ctx, host, defaultTemporaryPort) == nil {
-						logger.Debug("remote temporary registry on host %s is already alive, ignore serve command error: %v", host, err)
+						logger.Debug(
+							"remote temporary registry on host %s is already alive, ignore serve command error: %v",
+							host,
+							err,
+						)
 						return
 					}
 					logger.Error(err)
@@ -131,7 +146,11 @@ func (s *impl) Sync(ctx context.Context, hosts ...string) error {
 		}(cmdCtx, hosts[i], registryServeCommand)
 		go func(target, ep string) {
 			if err := waitRemoteTemporaryRegistry(ctx, target, defaultTemporaryPort); err != nil {
-				logger.Warn("cannot connect to remote temporary registry %s: %v, fallback using ssh mode instead", ep, err)
+				logger.Warn(
+					"cannot connect to remote temporary registry %s: %v, fallback using ssh mode instead",
+					ep,
+					err,
+				)
 				syncOptionChan <- &syncOption{target: target, typ: sshMode}
 			} else {
 				syncOptionChan <- &syncOption{target: ep, typ: httpMode}
@@ -157,7 +176,7 @@ func (s *impl) Sync(ctx context.Context, hosts ...string) error {
 				case sshMode:
 					err = syncViaSSH(ctx, s, opt.target, registryDir)
 				}
-				return
+				return err
 			})
 		}
 	}
@@ -180,7 +199,11 @@ func checkRemoteTemporaryRegistry(ctx context.Context, target, port string) erro
 	return waitRemoteTemporaryRegistryWithTimeout(ctx, target, port, 500*time.Millisecond)
 }
 
-func waitRemoteTemporaryRegistryWithTimeout(ctx context.Context, target, port string, timeout time.Duration) error {
+func waitRemoteTemporaryRegistryWithTimeout(
+	ctx context.Context,
+	target, port string,
+	timeout time.Duration,
+) error {
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ep := sync.ParseRegistryAddress(trimPortStr(target), port)
@@ -229,12 +252,19 @@ func (s *impl) getRegistryServeCommand(host, port string) (string, bool) {
 }
 
 func getRegistryServeProbeCommand(pathResolver constants.PathResolver, port string) string {
-	return fmt.Sprintf("if %[1]s registry serve filesystem --port %[2]s --help >/dev/null 2>&1; then printf -- '--port'; elif %[1]s registry serve filesystem -p %[2]s --help >/dev/null 2>&1; then printf -- '-p'; else exit 0; fi; if %[1]s registry serve filesystem --pid-file %[3]s --help >/dev/null 2>&1; then printf ' --pid-file'; fi; if %[1]s registry serve filesystem --disable-logging=true --help >/dev/null 2>&1; then printf ' --disable-logging'; fi",
-		pathResolver.RootFSSealctlPath(), port, registryPIDFile(pathResolver),
+	return fmt.Sprintf(
+		"if %[1]s registry serve filesystem --port %[2]s --help >/dev/null 2>&1; then printf -- '--port'; elif %[1]s registry serve filesystem -p %[2]s --help >/dev/null 2>&1; then printf -- '-p'; else exit 0; fi; if %[1]s registry serve filesystem --pid-file %[3]s --help >/dev/null 2>&1; then printf ' --pid-file'; fi; if %[1]s registry serve filesystem --disable-logging=true --help >/dev/null 2>&1; then printf ' --disable-logging'; fi",
+		pathResolver.RootFSSealctlPath(),
+		port,
+		registryPIDFile(pathResolver),
 	)
 }
 
-func getRegistryServeCommand(pathResolver constants.PathResolver, port string, flags registryServeFlags) string {
+func getRegistryServeCommand(
+	pathResolver constants.PathResolver,
+	port string,
+	flags registryServeFlags,
+) string {
 	args := []string{
 		pathResolver.RootFSSealctlPath(),
 		"registry", "serve", "filesystem",
@@ -253,7 +283,8 @@ func getRegistryServeCommand(pathResolver constants.PathResolver, port string, f
 }
 
 func getRegistryServeCleanupCommand(pathResolver constants.PathResolver) string {
-	return fmt.Sprintf("if [ -s %[1]s ]; then pid=$(cat %[1]s 2>/dev/null || true); if [ -n \"$pid\" ] && [ -r \"/proc/$pid/cmdline\" ]; then cmd=$(tr '\\000' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null || true); case \"$cmd\" in *\"%[2]s registry serve filesystem\"*\"%[3]s\"*) kill \"$pid\" 2>/dev/null || true;; esac; fi; rm -f %[1]s; fi",
+	return fmt.Sprintf(
+		"if [ -s %[1]s ]; then pid=$(cat %[1]s 2>/dev/null || true); if [ -n \"$pid\" ] && [ -r \"/proc/$pid/cmdline\" ]; then cmd=$(tr '\\000' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null || true); case \"$cmd\" in *\"%[2]s registry serve filesystem\"*\"%[3]s\"*) kill \"$pid\" 2>/dev/null || true;; esac; fi; rm -f %[1]s; fi",
 		registryPIDFile(pathResolver),
 		pathResolver.RootFSSealctlPath(),
 		pathResolver.RootFSRegistryPath(),
@@ -264,13 +295,17 @@ func registryPIDFile(pathResolver constants.PathResolver) string {
 	return filepath.Join(pathResolver.RootFSPath(), registryPIDFileName)
 }
 
-func syncViaSSH(_ context.Context, s *impl, target string, localDir string) error {
+func syncViaSSH(_ context.Context, s *impl, target, localDir string) error {
 	return ssh.CopyDir(s.execer, target, localDir, s.pathResolver.RootFSRegistryPath(), nil)
 }
 
-func syncViaHTTP(ctx context.Context, target string, localDir string) error {
+func syncViaHTTP(ctx context.Context, target, localDir string) error {
+	// The source is the loopback registry and the target is the temporary
+	// registry Sealos starts on the host; ToRegistry handles both (loopback
+	// exception for the source, the explicit InsecureDestination for the
+	// target). Only other, user-supplied sources inherit the opt-out here.
 	sys := &types.SystemContext{
-		DockerInsecureSkipTLSVerify: types.OptionalBoolTrue,
+		DockerInsecureSkipTLSVerify: types.NewOptionalBool(sregutils.InsecureTLS()),
 	}
 
 	config, err := handler.NewConfig(localDir, 0)
@@ -298,14 +333,27 @@ func syncViaHTTP(ctx context.Context, target string, localDir string) error {
 			copy.CopyAllImages, copy.CopySystemImage,
 		},
 		OmitError: true,
+		// The target is the temporary registry Sealos starts on the host
+		// (`sealctl registry serve filesystem`), which speaks plain HTTP by
+		// design; the source is a loopback registry and is still TLS-checked
+		// unless it is also loopback.
+		InsecureDestination: true,
 	}
 
-	if err = sync.ToRegistry(ctx, opts); err != nil && !strings.Contains(err.Error(), "manifest unknown") {
+	if err = sync.ToRegistry(
+		ctx,
+		opts,
+	); err != nil &&
+		!strings.Contains(err.Error(), "manifest unknown") {
 		return err
 	}
 	return nil
 }
 
-func New(pathResolver constants.PathResolver, execer exec.Interface, mounts []v2.MountImage) filesystem.RegistrySyncer {
+func New(
+	pathResolver constants.PathResolver,
+	execer exec.Interface,
+	mounts []v2.MountImage,
+) filesystem.RegistrySyncer {
 	return &impl{pathResolver, execer, mounts}
 }

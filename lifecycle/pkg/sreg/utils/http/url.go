@@ -22,6 +22,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,25 +31,84 @@ import (
 )
 
 var DefaultClient = &http.Client{
-	Transport: DefaultSkipVerify,
+	Transport: DefaultTransport,
 }
 
-var DefaultSkipVerify = &http.Transport{
-	Proxy:               http.ProxyFromEnvironment,
-	MaxIdleConnsPerHost: 100,
-	DialContext: (&net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}).DialContext,
-	MaxIdleConns:          100,
-	IdleConnTimeout:       90 * time.Second,
-	TLSHandshakeTimeout:   10 * time.Second,
-	ExpectContinueTimeout: 1 * time.Second,
-	// nosemgrep
-	TLSClientConfig: &tls.Config{
-		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS12,
-	},
+// InsecureTLS reports whether the user explicitly opted out of TLS
+// verification with SEALOS_REGISTRY_INSECURE=true.
+func InsecureTLS() bool {
+	v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("SEALOS_REGISTRY_INSECURE")))
+	return err == nil && v
+}
+
+func newTransport(skipVerify bool) *http.Transport {
+	return &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		MaxIdleConnsPerHost: 100,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			// nosemgrep: go.lang.security.audit.crypto.tls.InsecureSkipVerify
+			InsecureSkipVerify: skipVerify,
+			MinVersion:         tls.VersionTLS12,
+		},
+	}
+}
+
+// DefaultTransport verifies registry TLS certificates.
+var DefaultTransport = newTransport(false)
+
+// InsecureTransport skips verification and is only used after an explicit
+// SEALOS_REGISTRY_INSECURE=true opt-out.
+var InsecureTransport = newTransport(true)
+
+// Transport returns the transport matching the explicit opt-out setting.
+func Transport() *http.Transport {
+	if InsecureTLS() {
+		logger.Warn("registry TLS verification is disabled by SEALOS_REGISTRY_INSECURE")
+		return InsecureTransport
+	}
+	return DefaultTransport
+}
+
+// IsLoopbackAddress reports whether a registry host or host:port points to
+// this machine. Traffic to these addresses never leaves the host, so allowing
+// plain HTTP or an unverified certificate there cannot be intercepted by a
+// network attacker.
+func IsLoopbackAddress(addr string) bool {
+	host := registryHost(addr)
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// IsSealosManagedRegistry reports whether addr points at the registry Sealos
+// deploys inside the cluster (sealos.hub), which serves plain HTTP and cannot
+// present a trusted certificate. Custom registry domains need the explicit
+// SEALOS_REGISTRY_INSECURE=true opt-out.
+func IsSealosManagedRegistry(addr string) bool {
+	return strings.EqualFold(registryHost(addr), "sealos.hub")
+}
+
+func registryHost(addr string) string {
+	addr = strings.TrimSpace(addr)
+	addr = strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
+	addr = strings.TrimSuffix(addr, "/")
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	return strings.Trim(host, "[]")
 }
 
 func IsURL(u string) (*url.URL, bool) {

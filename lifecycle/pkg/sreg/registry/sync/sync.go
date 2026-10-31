@@ -26,9 +26,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	gcrane "github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
-
 	"github.com/containers/common/pkg/retry"
 	"github.com/containers/image/v5/copy"
 	"github.com/containers/image/v5/docker"
@@ -38,8 +35,10 @@ import (
 	"github.com/containers/image/v5/transports/alltransports"
 	"github.com/containers/image/v5/types"
 	dtype "github.com/docker/docker/api/types/registry"
-
+	gcrane "github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/labring/sealos/pkg/sreg/registry/crane"
+	httputils "github.com/labring/sealos/pkg/sreg/utils/http"
 	"github.com/labring/sealos/pkg/sreg/utils/logger"
 )
 
@@ -55,6 +54,12 @@ type Options struct {
 	SystemContext    *types.SystemContext
 	ReportWriter     io.Writer
 	Auths            map[string]dtype.AuthConfig
+	// InsecureDestination skips destination TLS verification. Set it only when
+	// the target is a registry Sealos itself started in plain-HTTP mode (the
+	// cluster registry or the temporary `sealctl registry serve` instance);
+	// source (pull) traffic stays verified unless SEALOS_REGISTRY_INSECURE is
+	// set.
+	InsecureDestination bool
 }
 
 func ToRegistry(ctx context.Context, opts *Options) error {
@@ -62,8 +67,11 @@ func ToRegistry(ctx context.Context, opts *Options) error {
 	dst := opts.Target
 	sys := opts.SystemContext
 	reportWriter := opts.ReportWriter
-	srcSys := systemContextWithAuth(sys, opts.Auths, src)
-	dstSys := systemContextWithAuth(sys, opts.Auths, dst)
+	srcSys := systemContextWithAuth(insecureForTrustedRegistry(sys, src), opts.Auths, src)
+	dstSys := systemContextWithAuth(insecureForTrustedRegistry(sys, dst), opts.Auths, dst)
+	if opts.InsecureDestination {
+		dstSys.DockerInsecureSkipTLSVerify = types.OptionalBoolTrue
+	}
 
 	policyContext, err := getPolicyContext()
 	if err != nil {
@@ -98,22 +106,44 @@ func ToRegistry(ctx context.Context, opts *Options) error {
 		}
 		for j := range refs {
 			destSuffix := strings.TrimPrefix(refs[j].DockerReference().String(), src)
-			destRef, err := docker.ParseReference(fmt.Sprintf("//%s", filepath.Join(dst, destSuffix)))
+			destRef, err := docker.ParseReference(
+				"//" + filepath.Join(dst, destSuffix),
+			)
 			if err != nil {
 				return err
 			}
 			ref := refs[j]
 			for s := range opts.SelectionOptions {
 				selection := opts.SelectionOptions[s]
-				logger.Debug("syncing %s with selection %v", destRef.DockerReference().String(), selection)
-				if err = copyImageWithFallback(ctx, policyContext, ref, destRef, srcSys, dstSys, reportWriter, opts.Auths, selection); err != nil {
-					if strings.Contains(err.Error(), "manifest unknown") && selection == copy.CopyAllImages {
+				logger.Debug(
+					"syncing %s with selection %v",
+					destRef.DockerReference().String(),
+					selection,
+				)
+				if err = copyImageWithFallback(
+					ctx,
+					policyContext,
+					ref,
+					destRef,
+					srcSys,
+					dstSys,
+					reportWriter,
+					opts.Auths,
+					selection,
+					opts.InsecureDestination,
+				); err != nil {
+					if strings.Contains(err.Error(), "manifest unknown") &&
+						selection == copy.CopyAllImages {
 						continue
 					}
 					if !opts.OmitError {
 						return err
 					}
-					logger.Warn("failed to copy image %s: %v", refs[j].DockerReference().String(), err)
+					logger.Warn(
+						"failed to copy image %s: %v",
+						refs[j].DockerReference().String(),
+						err,
+					)
 				}
 			}
 		}
@@ -121,7 +151,16 @@ func ToRegistry(ctx context.Context, opts *Options) error {
 	return allError
 }
 
-func copyImageWithFallback(ctx context.Context, policyContext *signature.PolicyContext, srcRef, destRef types.ImageReference, srcSys, dstSys *types.SystemContext, reportWriter io.Writer, auths map[string]dtype.AuthConfig, selection copy.ImageListSelection) error {
+func copyImageWithFallback(
+	ctx context.Context,
+	policyContext *signature.PolicyContext,
+	srcRef, destRef types.ImageReference,
+	srcSys, dstSys *types.SystemContext,
+	reportWriter io.Writer,
+	auths map[string]dtype.AuthConfig,
+	selection copy.ImageListSelection,
+	insecureDst bool,
+) error {
 	err := retry.RetryIfNecessary(ctx, func() error {
 		_, copyErr := copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{
 			SourceCtx:          srcSys,
@@ -135,9 +174,18 @@ func copyImageWithFallback(ctx context.Context, policyContext *signature.PolicyC
 		return err
 	}
 
-	logger.Debug("fallback to remote registry copy for %s -> %s due to OCI media type compatibility error", srcRef.DockerReference().String(), destRef.DockerReference().String())
+	logger.Debug(
+		"fallback to remote registry copy for %s -> %s due to OCI media type compatibility error",
+		srcRef.DockerReference().String(),
+		destRef.DockerReference().String(),
+	)
 	return retry.RetryIfNecessary(ctx, func() error {
-		return remoteCopyImage(srcRef.DockerReference().String(), destRef.DockerReference().String(), auths)
+		return remoteCopyImage(
+			srcRef.DockerReference().String(),
+			destRef.DockerReference().String(),
+			auths,
+			insecureDst,
+		)
 	}, getRetryOptions())
 }
 
@@ -150,9 +198,11 @@ func isUnsupportedOCIV2S2MediaTypeError(err error) bool {
 		strings.Contains(msg, "application/vnd.oci.image.layer.v1.tar+gzip")
 }
 
-func remoteCopyImage(src, dst string, auths map[string]dtype.AuthConfig) error {
+func remoteCopyImage(src, dst string, auths map[string]dtype.AuthConfig, insecureDst bool) error {
 	options := crane.GetCraneOptions(auths)
-	options = append(options, gcrane.Insecure)
+	if insecureDst || httputils.InsecureTLS() || httputils.IsLoopbackAddress(dst) {
+		options = append(options, gcrane.Insecure)
+	}
 	return gcrane.Copy(src, dst, options...)
 }
 
@@ -168,7 +218,11 @@ func getRetryOptions() *retry.RetryOptions {
 	}
 }
 
-func ImageNameToReference(sys *types.SystemContext, img string, auth map[string]dtype.AuthConfig) (types.ImageReference, error) {
+func ImageNameToReference(
+	sys *types.SystemContext,
+	img string,
+	auth map[string]dtype.AuthConfig,
+) (types.ImageReference, error) {
 	if err := reexecIfNecessaryForImages(img); err != nil {
 		return nil, err
 	}
@@ -215,11 +269,18 @@ func ImageNameToReference(sys *types.SystemContext, img string, auth map[string]
 	return srcRef, nil
 }
 
-func RegistryToImage(ctx context.Context, sys *types.SystemContext, src types.ImageReference, dst string, selection copy.ImageListSelection) error {
+func RegistryToImage(
+	ctx context.Context,
+	sys *types.SystemContext,
+	src types.ImageReference,
+	dst string,
+	selection copy.ImageListSelection,
+) error {
 	allSrcImage := src.DockerReference().String()
 	var repo string
 	parts := strings.SplitN(allSrcImage, "/", 2)
-	if len(parts) == 2 && (strings.ContainsRune(parts[0], '.') || strings.ContainsRune(parts[0], ':')) {
+	if len(parts) == 2 &&
+		(strings.ContainsRune(parts[0], '.') || strings.ContainsRune(parts[0], ':')) {
 		// The first part of the repository is treated as the registry domain
 		// iff it contains a '.' or ':' character, otherwise it is all repository
 		// and the domain defaults to Docker Hub.
@@ -227,7 +288,7 @@ func RegistryToImage(ctx context.Context, sys *types.SystemContext, src types.Im
 		repo = parts[1]
 	}
 	logger.Debug("syncing image from %s to %s", allSrcImage, dst)
-	//named.
+	// named.
 	dstImage := strings.Join([]string{dst, repo}, "/")
 	destRef, err := alltransports.ParseImageName(fmt.Sprintf("docker://%s", dstImage))
 	if err != nil {
@@ -243,10 +304,12 @@ func RegistryToImage(ctx context.Context, sys *types.SystemContext, src types.Im
 			allError = fmt.Errorf("error tearing down policy context: %v", err)
 		}
 	}()
+	srcSys := insecureForTrustedRegistry(sys, reference.Domain(src.DockerReference()))
+	dstSys := insecureForTrustedRegistry(sys, dst)
 	if err = retry.RetryIfNecessary(ctx, func() error {
 		_, err = copy.Image(ctx, policyContext, destRef, src, &copy.Options{
-			SourceCtx:          sys,
-			DestinationCtx:     sys,
+			SourceCtx:          srcSys,
+			DestinationCtx:     dstSys,
 			ImageListSelection: selection,
 			ReportWriter:       os.Stdout,
 		})
@@ -257,7 +320,13 @@ func RegistryToImage(ctx context.Context, sys *types.SystemContext, src types.Im
 	return allError
 }
 
-func ArchiveToImage(ctx context.Context, sys *types.SystemContext, src types.ImageReference, dst string, selection copy.ImageListSelection) error {
+func ArchiveToImage(
+	ctx context.Context,
+	sys *types.SystemContext,
+	src types.ImageReference,
+	dst string,
+	selection copy.ImageListSelection,
+) error {
 	logger.Debug("syncing image from %s to %s", src.Transport().Name(), dst)
 	destRef, err := alltransports.ParseImageName(fmt.Sprintf("docker://%s", dst))
 	if err != nil {
@@ -273,10 +342,11 @@ func ArchiveToImage(ctx context.Context, sys *types.SystemContext, src types.Ima
 			allError = fmt.Errorf("error tearing down policy context: %v", err)
 		}
 	}()
+	dstSys := insecureForTrustedRegistry(sys, dst)
 	if err = retry.RetryIfNecessary(ctx, func() error {
 		_, err = copy.Image(ctx, policyContext, destRef, src, &copy.Options{
 			SourceCtx:          sys,
-			DestinationCtx:     sys,
+			DestinationCtx:     dstSys,
 			ImageListSelection: selection,
 			ReportWriter:       os.Stdout,
 		})
@@ -312,7 +382,11 @@ func parseRepositoryReference(input string) (reference.Named, error) {
 	return ref, nil
 }
 
-func imagesToCopyFromRepo(ctx context.Context, sys *types.SystemContext, repoRef reference.Named) ([]types.ImageReference, error) {
+func imagesToCopyFromRepo(
+	ctx context.Context,
+	sys *types.SystemContext,
+	repoRef reference.Named,
+) ([]types.ImageReference, error) {
 	tags, err := getImageTags(ctx, sys, repoRef)
 	if err != nil {
 		return nil, err
@@ -322,19 +396,33 @@ func imagesToCopyFromRepo(ctx context.Context, sys *types.SystemContext, repoRef
 	for _, tag := range tags {
 		taggedRef, err := reference.WithTag(repoRef, tag)
 		if err != nil {
-			logger.Error("Error creating a tagged reference from registry tag %s:%s list: %v", repoRef.Name(), tag, err)
+			logger.Error(
+				"Error creating a tagged reference from registry tag %s:%s list: %v",
+				repoRef.Name(),
+				tag,
+				err,
+			)
 			continue
 		}
 		ref, err := docker.NewReference(taggedRef)
 		if err != nil {
-			return nil, fmt.Errorf("cannot obtain a valid image reference for transport %q and reference %s: %w", docker.Transport.Name(), taggedRef.String(), err)
+			return nil, fmt.Errorf(
+				"cannot obtain a valid image reference for transport %q and reference %s: %w",
+				docker.Transport.Name(),
+				taggedRef.String(),
+				err,
+			)
 		}
 		sourceReferences = append(sourceReferences, ref)
 	}
 	return sourceReferences, nil
 }
 
-func getImageTags(ctx context.Context, sysCtx *types.SystemContext, repoRef reference.Named) ([]string, error) {
+func getImageTags(
+	ctx context.Context,
+	sysCtx *types.SystemContext,
+	repoRef reference.Named,
+) ([]string, error) {
 	name := repoRef.Name()
 	dockerRef, err := docker.NewReference(reference.TagNameOnly(repoRef))
 	if err != nil {
@@ -364,7 +452,11 @@ func ParseRegistryAddress(s string, args ...string) string {
 	return net.JoinHostPort(s, portStr)
 }
 
-func systemContextWithAuth(base *types.SystemContext, auths map[string]dtype.AuthConfig, registry string) *types.SystemContext {
+func systemContextWithAuth(
+	base *types.SystemContext,
+	auths map[string]dtype.AuthConfig,
+	registry string,
+) *types.SystemContext {
 	ctx := cloneSystemContext(base)
 	auth, ok := lookupRegistryAuth(auths, registry)
 	if !ok {
@@ -379,6 +471,21 @@ func systemContextWithAuth(base *types.SystemContext, auths map[string]dtype.Aut
 	return ctx
 }
 
+// insecureForTrustedRegistry relaxes TLS verification only for registries
+// whose traffic cannot be meaningfully verified: this machine (loopback, where
+// temporary registries started by sealos serve plain HTTP) or the plain-HTTP
+// registry Sealos deploys itself. All other registries keep the configured
+// (verifying) policy.
+func insecureForTrustedRegistry(sys *types.SystemContext, registry string) *types.SystemContext {
+	if sys == nil ||
+		(!httputils.IsLoopbackAddress(registry) && !httputils.IsSealosManagedRegistry(registry)) {
+		return sys
+	}
+	cloned := *sys
+	cloned.DockerInsecureSkipTLSVerify = types.OptionalBoolTrue
+	return &cloned
+}
+
 func cloneSystemContext(base *types.SystemContext) *types.SystemContext {
 	if base == nil {
 		return &types.SystemContext{}
@@ -388,7 +495,10 @@ func cloneSystemContext(base *types.SystemContext) *types.SystemContext {
 	return &cloned
 }
 
-func lookupRegistryAuth(auths map[string]dtype.AuthConfig, registry string) (dtype.AuthConfig, bool) {
+func lookupRegistryAuth(
+	auths map[string]dtype.AuthConfig,
+	registry string,
+) (dtype.AuthConfig, bool) {
 	if len(auths) == 0 {
 		return dtype.AuthConfig{}, false
 	}

@@ -20,14 +20,12 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/sync/errgroup"
-
+	"github.com/labring/sealos/pkg/system"
 	v2 "github.com/labring/sealos/pkg/types/v1beta1"
 	fileutils "github.com/labring/sealos/pkg/utils/file"
 	"github.com/labring/sealos/pkg/utils/logger"
-
-	"github.com/labring/sealos/pkg/system"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -81,7 +79,11 @@ func GetExecutionTimeout() time.Duration {
 
 	timeout, err := parseExecutionTimeout(cfg.DefaultValue)
 	if err != nil {
-		logger.Debug("failed to parse execution timeout value %s: %v, using default", cfg.DefaultValue, err)
+		logger.Debug(
+			"failed to parse execution timeout value %s: %v, using default",
+			cfg.DefaultValue,
+			err,
+		)
 		return defaultExecutionTimeout
 	}
 
@@ -143,6 +145,10 @@ func newFromOptions(opt *Option, opts ...OptionFunc) (*Client, error) {
 	}
 	for i := range opts {
 		opts[i](opt)
+	}
+	if opt.hostKeyCallback == nil {
+		// Fail closed: a manually built Option must still verify host keys.
+		opt.hostKeyCallback = opt.hostKeyVerifier()
 	}
 
 	config := &ssh.ClientConfig{
