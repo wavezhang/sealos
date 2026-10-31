@@ -175,7 +175,7 @@ func TestKubeConfigRefreshRequiredRespectsRotateAt(t *testing.T) {
 
 func TestKubeConfigRefreshTimeUsesHalfLifetime(t *testing.T) {
 	t.Parallel()
-	issuedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	issuedAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name     string
 		lifetime time.Duration

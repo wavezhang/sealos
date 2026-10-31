@@ -415,7 +415,7 @@ func kubeConfigRenewalDue(user *userv1.User, now time.Time) bool {
 	if user.Status.KubeConfigRefreshAt == nil || user.Status.KubeConfigRefreshAt.IsZero() {
 		return true
 	}
-	return !user.Status.KubeConfigRefreshAt.Time.After(now)
+	return !user.Status.KubeConfigRefreshAt.After(now)
 }
 
 // kubeConfigRefreshRequired combines scheduled renewal with a manual rotation
