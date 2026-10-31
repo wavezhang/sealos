@@ -22,15 +22,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/labring/sealos/pkg/constants"
 	"github.com/labring/sealos/pkg/template"
 	"github.com/labring/sealos/pkg/utils/file"
-
-	"golang.org/x/exp/slices"
-
 	"github.com/labring/sealos/pkg/utils/logger"
 )
 
@@ -63,7 +61,7 @@ func FilterNonEmptyFromSlice(list []string) (ret []string) {
 			ret = append(ret, list[i])
 		}
 	}
-	return
+	return ret
 }
 
 func FilterNonEmptyFromString(s, sep string) []string {
@@ -101,7 +99,7 @@ func RemoveFromSlice(ss []string, s string) (result []string) {
 			result = append(result, v)
 		}
 	}
-	return
+	return result
 }
 
 func Merge(ss []string, s string) []string {
@@ -125,7 +123,7 @@ func FormatSize(size int64) (Size string) {
 	} else {
 		Size = fmt.Sprintf("%.2fGB", float64(size)/float64(1024*1024*1024))
 	}
-	return
+	return Size
 }
 
 func IsLetterOrNumber(k string) bool {
@@ -140,15 +138,43 @@ func IsLetterOrNumber(k string) bool {
 	return true
 }
 
-func RenderShellWithEnv(shell string, envs map[string]string) string {
-	var env string
-	for k, v := range envs {
-		env = fmt.Sprintf("%s%s=\"%s\" ", env, k, v)
+// shellEnvKeyRe restricts environment variable names to POSIX shell
+// identifiers. Anything else could terminate the export statement.
+var shellEnvKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ShellQuote returns s quoted for safe use as a single POSIX shell word.
+// Embedded single quotes are escaped as '\” (close quote, escaped quote,
+// reopen quote) so no character in s can leave the quoted context.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// RenderShellWithEnv prepends "export KEY=VALUE" statements to shell.
+// Keys are validated as shell identifiers and values are single-quoted to
+// prevent command injection from Clusterfile, image or host environment.
+func RenderShellWithEnv(shell string, envs map[string]string) (string, error) {
+	if len(envs) == 0 {
+		return shell, nil
 	}
-	if env == "" {
-		return shell
+	keys := make([]string, 0, len(envs))
+	for k := range envs {
+		keys = append(keys, k)
 	}
-	return fmt.Sprintf("export %s; %s", env, shell)
+	slices.Sort(keys)
+
+	var b strings.Builder
+	for _, k := range keys {
+		if !shellEnvKeyRe.MatchString(k) {
+			return "", fmt.Errorf("invalid environment variable name %q", k)
+		}
+		v := envs[k]
+		if strings.ContainsRune(v, 0) {
+			return "", fmt.Errorf("environment variable %q contains NUL byte", k)
+		}
+		fmt.Fprintf(&b, "export %s=%s; ", k, ShellQuote(v))
+	}
+	b.WriteString(shell)
+	return b.String(), nil
 }
 
 func RenderTextWithEnv(text string, envs map[string]string) string {

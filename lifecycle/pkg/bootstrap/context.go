@@ -22,6 +22,7 @@ import (
 	"github.com/labring/sealos/pkg/exec"
 	"github.com/labring/sealos/pkg/ssh"
 	v2 "github.com/labring/sealos/pkg/types/v1beta1"
+	"github.com/labring/sealos/pkg/utils/logger"
 	"github.com/labring/sealos/pkg/utils/maps"
 	stringsutil "github.com/labring/sealos/pkg/utils/strings"
 )
@@ -81,7 +82,14 @@ func NewContextFrom(cluster *v2.Cluster, contexts ...context.Context) Context {
 	// bootstrap process depends on the envs in the rootfs image
 	shellWrapper := func(host, shell string) string {
 		envs := maps.Merge(rootfsEnvs, envProcessor.Getenv(host))
-		return stringsutil.RenderShellWithEnv(shell, envs)
+		rendered, err := stringsutil.RenderShellWithEnv(shell, envs)
+		if err != nil {
+			// Refuse to run with unvalidated environment variables instead of
+			// silently dropping them.
+			logger.Error("failed to render shell environment for %s: %v", host, err)
+			return "exit 1"
+		}
+		return rendered
 	}
 	return &realContext{
 		cluster:      cluster,

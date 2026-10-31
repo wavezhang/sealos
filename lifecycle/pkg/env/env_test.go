@@ -59,9 +59,9 @@ func Test_processor_WrapperShell(t *testing.T) {
 				shell: "echo $foo ${IP[@]}",
 			},
 			[]string{
-				"IP=\"127.0.0.2\"",
-				"key=\"bar\"",
-				"foo=\"bar xxx ddd fffff\"",
+				"IP='127.0.0.2'",
+				"key='bar'",
+				"foo='bar xxx ddd fffff'",
 				"echo $foo ${IP[@]}",
 			},
 		},
@@ -72,7 +72,10 @@ func Test_processor_WrapperShell(t *testing.T) {
 				Cluster: tt.fields.Cluster,
 				cache:   make(map[string]map[string]string),
 			}
-			got := p.WrapShell(tt.args.host, tt.args.shell)
+			got, err := p.WrapShell(tt.args.host, tt.args.shell)
+			if err != nil {
+				t.Fatalf("WrapperShell() error = %v", err)
+			}
 			for _, want := range tt.want {
 				if !strings.Contains(got, want) {
 					t.Errorf("WrapperShell() = %v, want %v", got, want)

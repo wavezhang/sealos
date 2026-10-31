@@ -24,9 +24,8 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/labring/sealos/pkg/utils/logger"
+	"golang.org/x/sync/errgroup"
 )
 
 func (c *Client) Ping(host string) error {
@@ -43,9 +42,11 @@ func (c *Client) wrapCommands(cmds ...string) string {
 		return cmdJoined
 	}
 
-	// Escape single quotes in cmd, fix https://github.com/labring/sealos/issues/4424
-	// e.g. echo 'hello world' -> `sudo -E /bin/bash -c 'echo "hello world"'`
-	cmdEscaped := strings.ReplaceAll(cmdJoined, `'`, `"`)
+	// Escape single quotes so the command can be wrapped in a single-quoted
+	// argument for the root shell: ' becomes '\'' (close, escaped quote,
+	// reopen). Replacing quotes with double quotes is not an escape and would
+	// re-enable $() and backtick expansion as root.
+	cmdEscaped := strings.ReplaceAll(cmdJoined, `'`, `'\''`)
 	return fmt.Sprintf("sudo -E /bin/bash -c '%s'", cmdEscaped)
 }
 
@@ -187,7 +188,10 @@ func (c *Client) handlePipe(host string, pipe io.Reader, out io.Writer, isStdout
 	r := bufio.NewReader(pipe)
 	writers := []io.Writer{out}
 	if isStdout {
-		writers = append(writers, &withPrefixWriter{prefix: host + "\t", newline: true, w: os.Stdout})
+		writers = append(
+			writers,
+			&withPrefixWriter{prefix: host + "\t", newline: true, w: os.Stdout},
+		)
 	}
 	w := io.MultiWriter(writers...)
 	var line []byte

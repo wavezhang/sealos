@@ -1,0 +1,40 @@
+/*
+Copyright 2026 sealos.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package constants
+
+import (
+	"errors"
+	"fmt"
+	"regexp"
+)
+
+// clusterNameRe allows the characters accepted by container names and keeps
+// cluster names usable as a single path segment. Shell metacharacters, path
+// separators and leading dots or dashes are rejected so a name cannot escape
+// the sealos data directory or be mistaken for a command-line flag.
+var clusterNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
+
+// ValidateClusterName rejects empty or unsafe cluster names.
+func ValidateClusterName(name string) error {
+	if name == "" {
+		return errors.New("cluster name cannot be empty")
+	}
+	if !clusterNameRe.MatchString(name) {
+		return fmt.Errorf("invalid cluster name %q: must match %s", name, clusterNameRe.String())
+	}
+	return nil
+}

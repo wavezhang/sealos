@@ -66,9 +66,11 @@ func (d *Default) Apply(cluster *v2.Cluster, mounts []v2.MountImage, targetHosts
 				envs := maps.Merge(m.Env, envGetter.Getenv(node))
 				cmds := formalizeImageCommands(cluster, i, m, envs)
 				eg.Go(func() error {
-					return execer.CmdAsyncWithContext(ctx, node,
-						stringsutil.RenderShellWithEnv(strings.Join(cmds, "; "), envs),
-					)
+					rendered, err := stringsutil.RenderShellWithEnv(strings.Join(cmds, "; "), envs)
+					if err != nil {
+						return err
+					}
+					return execer.CmdAsyncWithContext(ctx, node, rendered)
 				})
 			}
 			if err := eg.Wait(); err != nil {
@@ -78,9 +80,11 @@ func (d *Default) Apply(cluster *v2.Cluster, mounts []v2.MountImage, targetHosts
 			// on run on the first master
 			envs := maps.Merge(m.Env, envGetter.Getenv(cluster.GetMaster0IP()))
 			cmds := formalizeImageCommands(cluster, i, m, envs)
-			if err := execer.CmdAsync(cluster.GetMaster0IPAndPort(),
-				stringsutil.RenderShellWithEnv(strings.Join(cmds, "; "), envs),
-			); err != nil {
+			rendered, err := stringsutil.RenderShellWithEnv(strings.Join(cmds, "; "), envs)
+			if err != nil {
+				return err
+			}
+			if err := execer.CmdAsync(cluster.GetMaster0IPAndPort(), rendered); err != nil {
 				return err
 			}
 		}

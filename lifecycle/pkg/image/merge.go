@@ -19,14 +19,41 @@ package image
 // nosemgrep: go.lang.security.audit.xss.import-text-template.import-text-template
 import (
 	"bytes"
+	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-
 	"github.com/labring/sealos/pkg/types/v1beta1"
 	"github.com/labring/sealos/pkg/utils/maps"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+var (
+	dockerfileLabelKeyRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+	dockerfileEnvKeyRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
+)
+
+// validateDockerfileValue rejects newlines, NUL and other control characters
+// so image metadata cannot terminate the current Dockerfile instruction and
+// inject a new one (for example RUN).
+func validateDockerfileValue(field, value string) error {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("image %s %q contains a control character", field, value)
+		}
+	}
+	return nil
+}
+
+// dockerfileQuote escapes a value and wraps it in double quotes so it stays a
+// single Dockerfile token. backslashes and quotes are escaped before the
+// dollar-sign handling to preserve the previous literal-$ behaviour.
+func dockerfileQuote(value string, cmd bool) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + escapeDollarSign(value, cmd) + `"`
+}
 
 func escapeDollarSign(s string, cmd bool) string {
 	if cmd {
@@ -60,7 +87,11 @@ func MergeDockerfileFromImages(imageObjList []map[string]v1.Image) (string, erro
 			labels = maps.Merge(labels, val.Config.Labels)
 
 			if val.Config.Labels != nil {
-				if key := maps.GetFromKeys(val.Config.Labels, v1beta1.ImageTypeKeys...); key == string(v1beta1.RootfsImage) {
+				if key := maps.GetFromKeys(
+					val.Config.Labels,
+					v1beta1.ImageTypeKeys...); key == string(
+					v1beta1.RootfsImage,
+				) {
 					isRootfs = true
 				}
 			}
@@ -73,14 +104,39 @@ func MergeDockerfileFromImages(imageObjList []map[string]v1.Image) (string, erro
 	if isRootfs {
 		maps.SetKeys(labels, v1beta1.ImageTypeKeys, string(v1beta1.RootfsImage))
 	}
-	for i, label := range labels {
-		labels[i] = "\"" + escapeDollarSign(label, false) + "\""
+	for k, v := range envs {
+		if !dockerfileEnvKeyRe.MatchString(k) {
+			return "", fmt.Errorf("invalid env key %q in image metadata", k)
+		}
+		if err := validateDockerfileValue("env value", v); err != nil {
+			return "", err
+		}
+	}
+	for k, label := range labels {
+		if !dockerfileLabelKeyRe.MatchString(k) {
+			return "", fmt.Errorf("invalid label key %q in image metadata", k)
+		}
+		if err := validateDockerfileValue("label value", label); err != nil {
+			return "", err
+		}
+		labels[k] = dockerfileQuote(label, false)
 	}
 	for i, entrypoint := range entrypoints {
-		entrypoints[i] = "\"" + escapeDollarSign(entrypoint, true) + "\""
+		if err := validateDockerfileValue("entrypoint", entrypoint); err != nil {
+			return "", err
+		}
+		entrypoints[i] = dockerfileQuote(entrypoint, true)
 	}
 	for i, cmd := range cmds {
-		cmds[i] = "\"" + escapeDollarSign(cmd, true) + "\""
+		if err := validateDockerfileValue("cmd", cmd); err != nil {
+			return "", err
+		}
+		cmds[i] = dockerfileQuote(cmd, true)
+	}
+	for _, name := range imageNames {
+		if err := validateDockerfileValue("image name", name); err != nil {
+			return "", err
+		}
 	}
 	t := template.New("")
 	t, err := t.Parse(
@@ -102,7 +158,8 @@ CMD [{{ .CMDs }}]
 {{- range .Images }}
 COPY --from={{.}}   . .
 {{- end }}
-{{- end }}`)
+{{- end }}`,
+	)
 	if err != nil {
 		return "", err
 	}

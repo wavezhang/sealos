@@ -43,8 +43,8 @@ func NewDefaultApplier(
 	cf clusterfile.Interface,
 	images []string,
 ) (Interface, error) {
-	if cluster.Name == "" {
-		return nil, fmt.Errorf("cluster name cannot be empty")
+	if err := constants.ValidateClusterName(cluster.Name); err != nil {
+		return nil, err
 	}
 	if cf == nil {
 		cf = clusterfile.NewClusterFile(constants.Clusterfile(cluster.Name))

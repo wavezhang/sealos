@@ -28,6 +28,7 @@ import (
 	"github.com/labring/sealos/pkg/ssh"
 	v2 "github.com/labring/sealos/pkg/types/v1beta1"
 	"github.com/labring/sealos/pkg/utils/logger"
+	stringsutil "github.com/labring/sealos/pkg/utils/strings"
 	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -101,7 +102,7 @@ func (k *KubeadmRuntime) Reset() error {
 		for _, master := range k.getMasterIPAndPortList() {
 			if err := k.removeStandaloneMasters([]string{master}, true); err != nil {
 				logger.Error("delete master %s failed %v", master, err)
-			} else if err := k.sshCmdAsync(master, fmt.Sprintf(cleanKubernetesFiles, k.getEtcdDataDir())); err != nil {
+			} else if err := k.sshCmdAsync(master, fmt.Sprintf(cleanKubernetesFiles, stringsutil.ShellQuote(k.getEtcdDataDir()))); err != nil {
 				logger.Error("failed to clean master files on %s: %v", master, err)
 			}
 			if err := k.sshCmdAsync(master, removeKubeConfig); err != nil {

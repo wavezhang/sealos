@@ -18,10 +18,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/labring/sealos/pkg/utils/logger"
+	stringsutil "github.com/labring/sealos/pkg/utils/strings"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/labring/sealos/pkg/utils/logger"
 )
 
 const (
@@ -68,7 +68,13 @@ func (k *KubeadmRuntime) resetMasters(nodes []string) {
 
 func (k *KubeadmRuntime) resetNode(node string, cleanHook func()) error {
 	logger.Info("start to reset node: %s", node)
-	resetCmd := fmt.Sprintf(remoteCleanMasterOrNode, vlogToStr(k.klogLevel), k.getEtcdDataDir())
+	// vlog comes from an int and is passed as a kubeadm argument; the etcd
+	// data directory is user-configurable and must be quoted.
+	resetCmd := fmt.Sprintf(
+		remoteCleanMasterOrNode,
+		vlogToStr(k.klogLevel),
+		stringsutil.ShellQuote(k.getEtcdDataDir()),
+	)
 
 	resetCmdErr := k.sshCmdAsync(node, resetCmd)
 	if cleanHook != nil {
@@ -80,7 +86,11 @@ func (k *KubeadmRuntime) resetNode(node string, cleanHook func()) error {
 	}
 	removeKubeConfigErr := k.sshCmdAsync(node, removeKubeConfig)
 	if removeKubeConfigErr != nil {
-		logger.Error("failed to clean node, exec command %s failed, %v", removeKubeConfig, removeKubeConfigErr)
+		logger.Error(
+			"failed to clean node, exec command %s failed, %v",
+			removeKubeConfig,
+			removeKubeConfigErr,
+		)
 	}
 	if slices.Contains(k.cluster.GetNodeIPAndPortList(), node) {
 		ipvscleanErr := k.execIPVSClean(node)

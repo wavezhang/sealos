@@ -31,7 +31,7 @@ type Interface interface {
 	// Input shell: cat /etc/hosts
 	// Output shell: DATADISK=/data cat /etc/hosts
 	// So that you can get env values in you shell script
-	WrapShell(host, shell string) string
+	WrapShell(host, shell string) (string, error)
 	// RenderAll :render env to all the files in dir
 	RenderAll(host, dir string, envs map[string]string) error
 	Getenv(host string) map[string]string
@@ -59,7 +59,7 @@ func (p *processor) Getenv(host string) map[string]string {
 	return env
 }
 
-func (p *processor) WrapShell(host, shell string) string {
+func (p *processor) WrapShell(host, shell string) (string, error) {
 	envs := p.getHostEnvInCache(host)
 	return stringsutil.RenderShellWithEnv(shell, envs)
 }
@@ -109,7 +109,10 @@ func (p *processor) getHostEnv(hostIP string) map[string]string {
 	excludeSysEnv := func(m map[string]string) map[string]string {
 		m, exclude := ExcludeKeysWithPrefix(m, "SEALOS_SYS")
 		if len(exclude) > 0 {
-			logger.Warn("skip %s cause envs with prefix SEALOS_SYS are sealos system only", strings.Join(exclude, ", "))
+			logger.Warn(
+				"skip %s cause envs with prefix SEALOS_SYS are sealos system only",
+				strings.Join(exclude, ", "),
+			)
 		}
 		return m
 	}

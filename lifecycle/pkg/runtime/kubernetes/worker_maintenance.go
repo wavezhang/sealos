@@ -21,6 +21,7 @@ import (
 
 	"github.com/labring/sealos/pkg/utils/iputils"
 	"github.com/labring/sealos/pkg/utils/logger"
+	stringsutil "github.com/labring/sealos/pkg/utils/strings"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -165,7 +166,11 @@ func (k *KubeadmRuntime) resetWorker(host string) error {
 	}
 	if err := k.sshCmdAsync(
 		host,
-		fmt.Sprintf(remoteCleanMasterOrNode, vlogToStr(k.klogLevel), k.getEtcdDataDir()),
+		fmt.Sprintf(
+			remoteCleanMasterOrNode,
+			vlogToStr(k.klogLevel),
+			stringsutil.ShellQuote(k.getEtcdDataDir()),
+		),
 	); err != nil {
 		return err
 	}
