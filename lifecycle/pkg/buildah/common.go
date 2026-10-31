@@ -169,7 +169,7 @@ func setDefaultSystemContext(sc *types.SystemContext) {
 	_ = sc
 }
 
-func bailOnError(err error, format string) { // nolint: golint,goprintffuncname
+func bailOnError(err error, format string) {
 	if err != nil {
 		if format != "" {
 			logger.Error("%s: %v", format, err)
