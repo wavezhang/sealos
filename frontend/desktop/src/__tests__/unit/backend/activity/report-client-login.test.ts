@@ -52,9 +52,9 @@ describe('Desktop login facts require authenticated official OAuth client creden
       desktop: {
         auth: {
           jwt: {
-            global: 'activity-test-global',
-            regional: 'activity-test-regional',
-            internal: 'activity-test-internal'
+            global: 'activity-test-global-0123456789abcdef',
+            regional: 'activity-test-regional-0123456789abcdef',
+            internal: 'activity-test-internal-0123456789abcdef'
           }
         }
       }
@@ -95,7 +95,7 @@ describe('Desktop login facts require authenticated official OAuth client creden
         : kind === 'third-party'
         ? access('third-party-native-client')
         : kind === 'array-client-id'
-        ? sign({ ...user, client_id: [DEVICE], token_type: 'access_token' }, 'activity-test-global')
+        ? sign({ ...user, client_id: [DEVICE], token_type: 'access_token' }, 'activity-test-global-0123456789abcdef')
         : kind === 'tampered-client-id'
         ? (() => {
             const parts = access('global-auth').split('.');

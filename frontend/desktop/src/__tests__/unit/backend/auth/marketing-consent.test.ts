@@ -17,9 +17,9 @@ describe('marketing consent token', () => {
       desktop: {
         auth: {
           jwt: {
-            global: 'global-secret-test',
-            marketingConsent: 'marketing-secret-test',
-            regional: 'regional-secret-test'
+            global: 'global-secret-test-0123456789abcdef',
+            marketingConsent: 'marketing-secret-test-0123456789abcdef',
+            regional: 'regional-secret-test-0123456789abcdef'
           }
         }
       }

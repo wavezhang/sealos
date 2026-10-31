@@ -47,7 +47,7 @@ describe('OAuth stays authoritative while optional metadata crosses the existing
       desktop: {
         auth: {
           callbackURL: origin,
-          jwt: { global: 'test-key' },
+          jwt: { global: 'test-key-0123456789abcdef0123456789' },
           oauth2idp: { enabled: true, authorizationCodeEnabled: true }
         }
       }

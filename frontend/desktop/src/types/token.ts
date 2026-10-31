@@ -43,6 +43,12 @@ export type AccessTokenPayload = {
   userCrName: string;
   workspaceUid: string;
   workspaceId: string;
+  /**
+   * Audience/type claims used to keep regional and app tokens apart.
+   * Optional for backwards compatibility with tokens issued before the split.
+   */
+  aud?: string | string[];
+  typ?: string;
 };
 
 export type CronJobTokenPayload = {

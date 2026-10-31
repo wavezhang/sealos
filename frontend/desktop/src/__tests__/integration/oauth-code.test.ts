@@ -82,7 +82,10 @@ describe.skipIf(!databaseUrl)('authorization code HTTP contract', () => {
       desktop: {
         auth: {
           callbackURL: 'https://auth.example.test',
-          jwt: { global: 'test-global', regional: 'test-region-secret' },
+          jwt: {
+            global: 'test-global-0123456789abcdef',
+            regional: 'test-region-secret-0123456789abcdef'
+          },
           oauth2idp: { enabled: true, authorizationCodeEnabled: true }
         }
       }
@@ -129,7 +132,10 @@ describe.skipIf(!databaseUrl)('authorization code HTTP contract', () => {
       headers: {
         origin: 'https://auth.example.test',
         'content-type': 'application/json',
-        authorization: sign({ userUid: uid, regionUid: 'test-region' }, 'test-region-secret')
+        authorization: sign(
+          { userUid: uid, userCrUid: uid, regionUid: 'test-region' },
+          'test-region-secret-0123456789abcdef'
+        )
       }
     });
     expect(approved.statusCode).toBe(200);
@@ -169,7 +175,10 @@ describe.skipIf(!databaseUrl)('authorization code HTTP contract', () => {
       headers: {
         origin: 'https://auth.example.test',
         'content-type': 'application/json',
-        authorization: sign({ userUid: uid, regionUid: 'test-region' }, 'test-region-secret')
+        authorization: sign(
+          { userUid: uid, userCrUid: uid, regionUid: 'test-region' },
+          'test-region-secret-0123456789abcdef'
+        )
       }
     });
     const token = (await import('@/pages/api/auth/oauth2/token')).default;
@@ -228,7 +237,10 @@ describe.skipIf(!databaseUrl)('authorization code HTTP contract', () => {
       headers: {
         origin: 'https://auth.example.test',
         'content-type': 'application/json',
-        authorization: sign({ userUid: uid, regionUid: 'test-region' }, 'test-region-secret')
+        authorization: sign(
+          { userUid: uid, userCrUid: uid, regionUid: 'test-region' },
+          'test-region-secret-0123456789abcdef'
+        )
       }
     };
   };
@@ -469,7 +481,10 @@ describe.skipIf(!databaseUrl)('authorization code HTTP contract', () => {
       };
       expect((await exchange(tokenBody)).body.error).toBe('authorization_pending');
       expect((await exchange(tokenBody)).body.error).toBe('slow_down');
-      const authorization = sign({ userUid: uid, regionUid: 'test-region' }, 'test-region-secret');
+      const authorization = sign(
+          { userUid: uid, userCrUid: uid, regionUid: 'test-region' },
+          'test-region-secret-0123456789abcdef'
+        );
       const ctx = await call(context, {
         query: { user_code: started.body.user_code },
         headers: { authorization }
@@ -537,7 +552,10 @@ describe.skipIf(!databaseUrl)('authorization code HTTP contract', () => {
         headers: {
           origin: 'https://auth.example.test',
           'content-type': 'application/json',
-          authorization: sign({ userUid: uid, regionUid: 'test-region' }, 'test-region-secret')
+          authorization: sign(
+          { userUid: uid, userCrUid: uid, regionUid: 'test-region' },
+          'test-region-secret-0123456789abcdef'
+        )
         }
       });
       await fetch(approved.body.redirect_uri);

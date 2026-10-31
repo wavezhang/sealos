@@ -42,7 +42,7 @@ const receipt = () => approveAnalyticsHandoff(requestToken(), binding, uid, cook
 describe('stateless App Cookie handoff', () => {
   const previous = global.AppConfig;
   beforeEach(() => {
-    global.AppConfig = { desktop: { auth: { jwt: { global: 'test-analytics-secret' } } } } as any;
+    global.AppConfig = { desktop: { auth: { jwt: { global: 'test-analytics-secret-0123456789abcdef' } } } } as any;
   });
   afterEach(() => {
     global.AppConfig = previous;
@@ -127,8 +127,8 @@ describe('stateless App Cookie handoff', () => {
       )
     ).toBeUndefined();
   });
-  it.each([undefined, '', '123456789'])(
-    'fails closed with missing/default signing secret',
+  it.each([undefined, '', '123456789', 'short-secret'])(
+    'fails closed with missing/default/short signing secret',
     (key) => {
       global.AppConfig.desktop.auth.jwt.global = key!;
       expect(beginAnalyticsHandoff(params, binding.id, cookie(), origin)).toBeUndefined();

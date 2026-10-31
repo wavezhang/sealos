@@ -13,16 +13,58 @@ import { randomUUID } from 'node:crypto';
 import { IncomingHttpHeaders } from 'http';
 import { sign, verify } from 'jsonwebtoken';
 
+const INSECURE_FALLBACK_SECRET = '123456789';
+const MIN_JWT_SECRET_LENGTH = 32;
+
 const regionUID = () => global.AppConfig?.cloud.regionUID || '123456789';
-export const globalJwtSecret = () => global.AppConfig?.desktop.auth.jwt.global || '123456789';
-const regionalJwtSecret = () => global.AppConfig?.desktop.auth.jwt.regional || '123456789';
-const internalJwtSecret = () => global.AppConfig?.desktop.auth.jwt.internal || '123456789';
+
+// JWT secrets must be explicitly configured. The only exception is an opt-in
+// development fallback, which is both env-gated and refused in production.
+const allowInsecureJwtFallback = () =>
+  process.env.NODE_ENV !== 'production' &&
+  process.env.DESKTOP_ALLOW_INSECURE_JWT_FALLBACK === '1';
+
+const resolveJwtSecret = (name: string, configured: string | undefined): string => {
+  if (typeof configured === 'string' && configured.length >= MIN_JWT_SECRET_LENGTH) {
+    return configured;
+  }
+  if (allowInsecureJwtFallback()) {
+    console.warn(
+      `[auth] ${name} JWT secret is missing or shorter than ${MIN_JWT_SECRET_LENGTH} characters; using the insecure development fallback`
+    );
+    return INSECURE_FALLBACK_SECRET;
+  }
+  throw new Error(
+    `${name} JWT secret is not configured (minimum ${MIN_JWT_SECRET_LENGTH} characters)`
+  );
+};
+
+export const globalJwtSecret = () =>
+  resolveJwtSecret('global', global.AppConfig?.desktop.auth.jwt.global);
+const regionalJwtSecret = () =>
+  resolveJwtSecret('regional', global.AppConfig?.desktop.auth.jwt.regional);
+const internalJwtSecret = () =>
+  resolveJwtSecret('internal', global.AppConfig?.desktop.auth.jwt.internal);
 export const marketingConsentJwtSecret = () =>
   global.AppConfig?.desktop.auth.jwt.marketingConsent || '';
 
 const ACCESS_TOKEN_TYPE = 'access_token' as const;
 const REFRESH_TOKEN_TYPE = 'refresh_token' as const;
 export const GLOBAL_TOKEN_CLIENT_ID = 'global-auth' as const;
+
+const REGIONAL_TOKEN_AUDIENCE = 'regional';
+const APP_TOKEN_AUDIENCE = 'app';
+const BILLING_TOKEN_AUDIENCE = 'billing';
+const CRON_TOKEN_AUDIENCE = 'cron';
+const ACCESS_TOKEN_USE = 'access';
+
+const hasAudience = (payload: { aud?: string | string[] }, audience: string) => {
+  if (payload.aud === undefined) return true; // Legacy token issued before audiences
+  return Array.isArray(payload.aud) ? payload.aud.includes(audience) : payload.aud === audience;
+};
+
+const hasAccessTokenUse = (payload: { typ?: string }) =>
+  payload.typ === undefined || payload.typ === ACCESS_TOKEN_USE;
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0;
@@ -92,7 +134,11 @@ export const verifyAccessToken = async (header: IncomingHttpHeaders) => {
     readAuthorizationToken,
     (token) => verifyRegionalJwt<AccessTokenPayload>(token)
   );
-  if (payload?.regionUid !== regionUID()) return null;
+  if (!payload || payload.regionUid !== regionUID()) return null;
+  // Legacy regional tokens have no aud/typ; new ones must match.
+  if (!hasAudience(payload, REGIONAL_TOKEN_AUDIENCE)) return null;
+  if (!hasAccessTokenUse(payload)) return null;
+  if (!isNonEmptyString(payload.userCrUid)) return null;
   return payload;
 };
 
@@ -135,7 +181,7 @@ export const verifyGlobalToken = async (
 const verifyJwt = <T extends object = JWTPayload>(token: string | undefined, secret: string) =>
   new Promise<T | null>((resolve) => {
     if (!token) return resolve(null);
-    verify(token, secret, (err, payload) => {
+    verify(token, secret, { algorithms: ['HS256'] }, (err, payload) => {
       if (err) {
         resolve(null);
       } else if (!payload) {
@@ -157,19 +203,37 @@ export const verifyInternalJwt = <T extends AccessTokenPayload = AccessTokenPayl
 ) => verifyJwt<T>(token, internalJwtSecret());
 
 export const verifyAppToken = async (header: IncomingHttpHeaders) => {
-  return verifyHeaderToken<AccessTokenPayload>(header, readRawAuthorizationToken, (token) =>
-    verifyInternalJwt<AccessTokenPayload>(token)
+  const payload = await verifyHeaderToken<AccessTokenPayload>(
+    header,
+    readRawAuthorizationToken,
+    (token) => verifyInternalJwt<AccessTokenPayload>(token)
   );
+  if (!payload) return null;
+  // Billing/cron tokens share the internal secret, so the audience separates
+  // them. Tokens issued before audiences existed are accepted until they expire.
+  if (!hasAudience(payload, APP_TOKEN_AUDIENCE)) return null;
+  if (!hasAccessTokenUse(payload)) return null;
+  if (!isNonEmptyString(payload.userCrUid)) return null;
+  return payload;
 };
 
 export const generateBillingToken = (props: BillingTokenPayload) =>
-  sign(props, internalJwtSecret(), { expiresIn: '3600000' });
+  sign(props, internalJwtSecret(), {
+    expiresIn: '3600000',
+    audience: BILLING_TOKEN_AUDIENCE
+  });
 
 export const generateRegionalToken = (props: AccessTokenPayload) =>
-  sign(props, regionalJwtSecret(), { expiresIn: '7d' });
+  sign({ ...props, typ: ACCESS_TOKEN_USE }, regionalJwtSecret(), {
+    expiresIn: '7d',
+    audience: REGIONAL_TOKEN_AUDIENCE
+  });
 
 export const generateAppToken = (props: AccessTokenPayload) =>
-  sign(props, internalJwtSecret(), { expiresIn: '7d' });
+  sign({ ...props, typ: ACCESS_TOKEN_USE }, internalJwtSecret(), {
+    expiresIn: '7d',
+    audience: APP_TOKEN_AUDIENCE
+  });
 
 /**
  * Signs global token.
@@ -305,7 +369,10 @@ export const generateOnceToken = (props: OnceTokenPayload) =>
   sign(props, regionalJwtSecret(), { expiresIn: '1800000' });
 
 export const generateCronJobToken = (props: CronJobTokenPayload) =>
-  sign(props, internalJwtSecret(), { expiresIn: '60000' });
+  sign(props, internalJwtSecret(), {
+    expiresIn: '60000',
+    audience: CRON_TOKEN_AUDIENCE
+  });
 
 // A hung billing call would stall the trigger chains (real-name callback /
 // login report / compensation worker), so it must be bounded
