@@ -82,14 +82,7 @@ func Transport() *http.Transport {
 // plain HTTP or an unverified certificate there cannot be intercepted by a
 // network attacker.
 func IsLoopbackAddress(addr string) bool {
-	addr = strings.TrimSpace(addr)
-	addr = strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
-	addr = strings.TrimSuffix(addr, "/")
-	host := addr
-	if h, _, err := net.SplitHostPort(addr); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
+	host := registryHost(addr)
 	if strings.EqualFold(host, "localhost") {
 		return true
 	}
@@ -97,6 +90,25 @@ func IsLoopbackAddress(addr string) bool {
 		return ip.IsLoopback()
 	}
 	return false
+}
+
+// IsSealosManagedRegistry reports whether addr points at the registry Sealos
+// deploys inside the cluster (sealos.hub), which serves plain HTTP and cannot
+// present a trusted certificate. Custom registry domains need the explicit
+// SEALOS_REGISTRY_INSECURE=true opt-out.
+func IsSealosManagedRegistry(addr string) bool {
+	return strings.EqualFold(registryHost(addr), "sealos.hub")
+}
+
+func registryHost(addr string) string {
+	addr = strings.TrimSpace(addr)
+	addr = strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
+	addr = strings.TrimSuffix(addr, "/")
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	return strings.Trim(host, "[]")
 }
 
 func IsURL(u string) (*url.URL, bool) {

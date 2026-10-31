@@ -18,21 +18,24 @@ import (
 	"runtime"
 	"strings"
 
-	name2 "github.com/google/go-containerregistry/pkg/name"
-
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-
 	"github.com/docker/docker/api/types/registry"
 	"github.com/google/go-containerregistry/pkg/crane"
-
+	name2 "github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/labring/sealos/pkg/sreg/utils/http"
 )
 
 func GetCraneOptions(authConfig map[string]registry.AuthConfig) []crane.Option {
-	return []crane.Option{crane.WithAuthFromKeychain(NewDefaultKeychain(authConfig)), crane.WithTransport(http.Transport())}
+	return []crane.Option{
+		crane.WithAuthFromKeychain(NewDefaultKeychain(authConfig)),
+		crane.WithTransport(http.Transport()),
+	}
 }
 
-func GetImageManifestFromAuth(image string, authConfig map[string]registry.AuthConfig) (newImage string, data []byte, cfg *registry.AuthConfig, err error) {
+func GetImageManifestFromAuth(
+	image string,
+	authConfig map[string]registry.AuthConfig,
+) (newImage string, data []byte, cfg *registry.AuthConfig, err error) {
 	newImage = image
 	if authConfig == nil {
 		authConfig, err = GetAuthInfo(nil)
@@ -54,7 +57,8 @@ func GetImageManifestFromAuth(image string, authConfig map[string]registry.AuthC
 		return newImage, nil, nil, err
 	}
 	parts := strings.SplitN(ref.Name(), "/", 2)
-	if len(parts) == 2 && (strings.ContainsRune(parts[0], '.') || strings.ContainsRune(parts[0], ':')) {
+	if len(parts) == 2 &&
+		(strings.ContainsRune(parts[0], '.') || strings.ContainsRune(parts[0], ':')) {
 		// The first part of the repository is treated as the registry domain
 		// iff it contains a '.' or ':' character, otherwise it is all repository
 		// and the domain defaults to Docker Hub.

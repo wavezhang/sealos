@@ -23,13 +23,12 @@ import (
 
 	imagecopy "github.com/containers/image/v5/copy"
 	"github.com/containers/image/v5/types"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/labring/sealos/pkg/sreg/registry/crane"
 	"github.com/labring/sealos/pkg/sreg/registry/sync"
 	httputils "github.com/labring/sealos/pkg/sreg/utils/http"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"golang.org/x/sync/errgroup"
 )
 
 type globalOptions struct {
@@ -40,9 +39,24 @@ type globalOptions struct {
 }
 
 func (opts *globalOptions) RegisterFlags(fs *pflag.FlagSet) {
-	fs.StringVar(&opts.overrideArch, "override-arch", "", "use `ARCH` instead of the architecture of the machine for choosing images")
-	fs.StringVar(&opts.overrideOS, "override-os", "", "use `OS` instead of the running OS for choosing images")
-	fs.StringVar(&opts.overrideVariant, "override-variant", "", "use `VARIANT` instead of the running architecture variant for choosing images")
+	fs.StringVar(
+		&opts.overrideArch,
+		"override-arch",
+		"",
+		"use `ARCH` instead of the architecture of the machine for choosing images",
+	)
+	fs.StringVar(
+		&opts.overrideOS,
+		"override-os",
+		"",
+		"use `OS` instead of the running OS for choosing images",
+	)
+	fs.StringVar(
+		&opts.overrideVariant,
+		"override-variant",
+		"",
+		"use `VARIANT` instead of the running architecture variant for choosing images",
+	)
 	fs.BoolVarP(&opts.all, "all", "a", false, "Sync all images if SOURCE-IMAGE is a list")
 }
 

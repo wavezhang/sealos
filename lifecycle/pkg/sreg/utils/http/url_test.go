@@ -67,23 +67,28 @@ func TestWaitUntilEndpointAlive(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			DefaultClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				if r.URL.Path != "/v2/" {
-					t.Fatalf("unexpected path: %s", r.URL.Path)
-				}
-				return &http.Response{
-					StatusCode: tt.statusCode,
-					Body:       io.NopCloser(http.NoBody),
-					Header:     make(http.Header),
-				}, nil
-			})}
+			DefaultClient = &http.Client{
+				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					if r.URL.Path != "/v2/" {
+						t.Fatalf("unexpected path: %s", r.URL.Path)
+					}
+					return &http.Response{
+						StatusCode: tt.statusCode,
+						Body:       io.NopCloser(http.NoBody),
+						Header:     make(http.Header),
+					}, nil
+				}),
+			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			tt.args.ctx = ctx
 			tt.args.endpoint = "http://registry.example.com"
 
-			if err := WaitUntilEndpointAlive(tt.args.ctx, tt.args.endpoint); (err != nil) != tt.wantErr {
+			if err := WaitUntilEndpointAlive(
+				tt.args.ctx,
+				tt.args.endpoint,
+			); (err != nil) != tt.wantErr {
 				t.Errorf("WaitUntilEndpointAlive() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -110,6 +115,26 @@ func TestIsLoopbackAddress(t *testing.T) {
 	for _, tt := range tests {
 		if got := IsLoopbackAddress(tt.addr); got != tt.want {
 			t.Errorf("IsLoopbackAddress(%q) = %v, want %v", tt.addr, got, tt.want)
+		}
+	}
+}
+
+func TestIsSealosManagedRegistry(t *testing.T) {
+	tests := []struct {
+		addr string
+		want bool
+	}{
+		{"sealos.hub:5000", true},
+		{"SEALOS.HUB", true},
+		{"http://sealos.hub:5000/", true},
+		{"10.1.0.85:5000", false},
+		{"sealos.hub.example.com:5000", false},
+		{"registry.example.com:5000", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := IsSealosManagedRegistry(tt.addr); got != tt.want {
+			t.Errorf("IsSealosManagedRegistry(%q) = %v, want %v", tt.addr, got, tt.want)
 		}
 	}
 }

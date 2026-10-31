@@ -28,22 +28,17 @@ import (
 	"github.com/containers/image/v5/types"
 	"github.com/containers/storage"
 	"github.com/containers/storage/pkg/unshare"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-
 	"github.com/labring/sealos/pkg/system"
 	wrapunshare "github.com/labring/sealos/pkg/unshare"
 	"github.com/labring/sealos/pkg/utils/logger"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-var (
-	// configuration, including customizations made in containers.conf
-	needToShutdownStore = false
-)
+// configuration, including customizations made in containers.conf
+var needToShutdownStore = false
 
-var (
-	IsRootless = wrapunshare.IsRootless
-)
+var IsRootless = wrapunshare.IsRootless
 
 func flagChanged(c *cobra.Command, name string) bool {
 	if fs := c.Flag(name); fs != nil && fs.Changed {
@@ -63,9 +58,21 @@ func setDefaultFlagsWithSetters(c *cobra.Command, setters ...func(*cobra.Command
 
 func getPlatformFlags() *pflag.FlagSet {
 	fs := &pflag.FlagSet{}
-	fs.String("arch", runtime.GOARCH, "set the ARCH of the image to the provided value instead of the architecture of the host")
-	fs.String("os", runtime.GOOS, "set the OS to the provided value instead of the current operating system of the host")
-	fs.StringSlice("platform", []string{parse.DefaultPlatform()}, "set the OS/ARCH/VARIANT of the image to the provided value instead of the current operating system and architecture of the host (for example `linux/arm`)")
+	fs.String(
+		"arch",
+		runtime.GOARCH,
+		"set the ARCH of the image to the provided value instead of the architecture of the host",
+	)
+	fs.String(
+		"os",
+		runtime.GOOS,
+		"set the OS to the provided value instead of the current operating system of the host",
+	)
+	fs.StringSlice(
+		"platform",
+		[]string{parse.DefaultPlatform()},
+		"set the OS/ARCH/VARIANT of the image to the provided value instead of the current operating system and architecture of the host (for example `linux/arm`)",
+	)
 	fs.String("variant", "", "override the `variant` of the specified image")
 	return fs
 }
@@ -162,7 +169,7 @@ func setDefaultSystemContext(sc *types.SystemContext) {
 	_ = sc
 }
 
-func bailOnError(err error, format string, a ...interface{}) { // nolint: golint,goprintffuncname
+func bailOnError(err error, format string, a ...any) { // nolint: golint,goprintffuncname
 	if err != nil {
 		if format != "" {
 			logger.Error("%s: %v", fmt.Sprintf(format, a...), err)
@@ -177,7 +184,10 @@ func getStore(c *cobra.Command) (storage.Store, error) {
 	if err := setXDGRuntimeDir(); err != nil {
 		return nil, err
 	}
-	options, err := storage.DefaultStoreOptions(unshare.GetRootlessUID() > 0, unshare.GetRootlessUID())
+	options, err := storage.DefaultStoreOptions(
+		unshare.GetRootlessUID() > 0,
+		unshare.GetRootlessUID(),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +211,11 @@ func getStore(c *cobra.Command) (storage.Store, error) {
 	// Differently, allow the mount if we are already in a userns, as the mount point will still
 	// be accessible once "buildah mount" exits.
 	if os.Geteuid() != 0 && options.GraphDriverName != "vfs" {
-		return nil, fmt.Errorf("cannot mount using driver %s in rootless mode. You need to run it in a `%s unshare` session", options.GraphDriverName, c.Root().Name())
+		return nil, fmt.Errorf(
+			"cannot mount using driver %s in rootless mode. You need to run it in a `%s unshare` session",
+			options.GraphDriverName,
+			c.Root().Name(),
+		)
 	}
 
 	if len(globalFlagResults.UserNSUID) > 0 {
@@ -220,7 +234,9 @@ func getStore(c *cobra.Command) (storage.Store, error) {
 		options.GIDMap = gidmap
 	} else {
 		if len(globalFlagResults.UserNSGID) > 0 {
-			return nil, errors.New("option --userns-gid-map can not be used without --userns-uid-map")
+			return nil, errors.New(
+				"option --userns-gid-map can not be used without --userns-uid-map",
+			)
 		}
 	}
 
@@ -239,7 +255,9 @@ func getStore(c *cobra.Command) (storage.Store, error) {
 		options.GIDMap = gidmap
 	} else {
 		if flagChanged(c, "userns-gid-map") {
-			return nil, errors.New("option --userns-gid-map can not be used without --userns-uid-map")
+			return nil, errors.New(
+				"option --userns-gid-map can not be used without --userns-uid-map",
+			)
 		}
 	}
 	umask.Check()
@@ -267,7 +285,11 @@ func setXDGRuntimeDir() error {
 	return nil
 }
 
-func openBuilder(ctx context.Context, store storage.Store, name string) (builder *buildah.Builder, err error) {
+func openBuilder(
+	ctx context.Context,
+	store storage.Store,
+	name string,
+) (builder *buildah.Builder, err error) {
 	if name != "" {
 		builder, err = buildah.OpenBuilder(store, name)
 		if errors.Is(err, os.ErrNotExist) {

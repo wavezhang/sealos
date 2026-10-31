@@ -45,8 +45,18 @@ func newDefaultLoginReply() loginReply {
 
 func (opts *loginReply) RegisterFlags(fs *pflag.FlagSet) {
 	fs.SetInterspersed(false)
-	fs.BoolVar(&opts.tlsVerify, "tls-verify", opts.tlsVerify, "require HTTPS and verify certificates when accessing the registry. TLS verification cannot be used when talking to an insecure registry.")
-	fs.BoolVar(&opts.getLogin, "get-login", opts.getLogin, "return the current login user for the registry")
+	fs.BoolVar(
+		&opts.tlsVerify,
+		"tls-verify",
+		opts.tlsVerify,
+		"require HTTPS and verify certificates when accessing the registry. TLS verification cannot be used when talking to an insecure registry.",
+	)
+	fs.BoolVar(
+		&opts.getLogin,
+		"get-login",
+		opts.getLogin,
+		"return the current login user for the registry",
+	)
 	fs.AddFlagSet(auth.GetLoginFlags(&opts.loginOpts))
 	bailOnError(markFlagsHidden(fs, "tls-verify"), "")
 }

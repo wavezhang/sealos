@@ -17,20 +17,19 @@ package save
 import (
 	"context"
 	"fmt"
-	"github.com/containers/image/v5/transports/alltransports"
 	"strings"
 	stdsync "sync"
 	"time"
 
 	"github.com/containers/image/v5/copy"
+	"github.com/containers/image/v5/transports/alltransports"
 	itype "github.com/containers/image/v5/types"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/labring/sealos/pkg/sreg/registry/handler"
 	"github.com/labring/sealos/pkg/sreg/registry/sync"
 	httputils "github.com/labring/sealos/pkg/sreg/utils/http"
 	"github.com/labring/sealos/pkg/sreg/utils/logger"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/errgroup"
 )
 
 func NewImageTarSaver(ctx context.Context, maxPullProcs int, all bool) Registry {
@@ -54,7 +53,11 @@ type tmpTarRegistryImage struct {
 	imageListSelection copy.ImageListSelection
 }
 
-func (is *tmpTarRegistryImage) SaveImages(images []string, dir string, platform v1.Platform) ([]string, error) {
+func (is *tmpTarRegistryImage) SaveImages(
+	images []string,
+	dir string,
+	platform v1.Platform,
+) ([]string, error) {
 	logger.Debug("trying to save images: %+v for platform: %s", images,
 		strings.Join([]string{platform.OS, platform.Architecture, platform.Variant}, ","))
 	config, err := handler.NewConfig(dir, 0)
@@ -101,7 +104,13 @@ func (is *tmpTarRegistryImage) SaveImages(images []string, dir string, platform 
 			if err != nil {
 				return fmt.Errorf("invalid source name %s: %v", allImage[0], err)
 			}
-			err = sync.ArchiveToImage(is.ctx, sys, srcRef, fmt.Sprintf("%s/%s", ep, allImage[1]), is.imageListSelection)
+			err = sync.ArchiveToImage(
+				is.ctx,
+				sys,
+				srcRef,
+				fmt.Sprintf("%s/%s", ep, allImage[1]),
+				is.imageListSelection,
+			)
 			if err != nil {
 				return fmt.Errorf("save image %s: %w", img, err)
 			}
