@@ -107,7 +107,7 @@ func ToRegistry(ctx context.Context, opts *Options) error {
 		for j := range refs {
 			destSuffix := strings.TrimPrefix(refs[j].DockerReference().String(), src)
 			destRef, err := docker.ParseReference(
-				fmt.Sprintf("//%s", filepath.Join(dst, destSuffix)),
+				"//" + filepath.Join(dst, destSuffix),
 			)
 			if err != nil {
 				return err
@@ -478,7 +478,7 @@ func systemContextWithAuth(
 // (verifying) policy.
 func insecureForTrustedRegistry(sys *types.SystemContext, registry string) *types.SystemContext {
 	if sys == nil ||
-		!(httputils.IsLoopbackAddress(registry) || httputils.IsSealosManagedRegistry(registry)) {
+		(!httputils.IsLoopbackAddress(registry) && !httputils.IsSealosManagedRegistry(registry)) {
 		return sys
 	}
 	cloned := *sys
