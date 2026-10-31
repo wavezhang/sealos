@@ -205,7 +205,10 @@ export default function Desktop({ initialAppLaunch, onInitialAppLoaded }: Deskto
 
   useEffect(() => {
     const cleanupMaster = createMasterAPP({
-      allowedOrigins: cloudConfig?.allowedOrigins || ['*'],
+      // Fail closed: if the cloud config is missing or not loaded yet, only the
+      // desktop's own origin may talk to the master SDK. A '*' fallback hands
+      // the full session (token + kubeconfig) to any iframe that loads first.
+      allowedOrigins: cloudConfig?.allowedOrigins || [],
       getWorkspaceQuotaApi: async () => {
         return getWorkspaceQuota().then((res) => res.data?.quota ?? []);
       },
