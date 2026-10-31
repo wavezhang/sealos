@@ -271,6 +271,23 @@ jobs:
             #   level=note  -> dependency is vulnerable but no vulnerable symbol is called
             report="${GITHUB_WORKSPACE}/govuln-sarif/${key}.sarif"
             if jq -e '.runs' "${report}" >/dev/null 2>&1; then
+              # govulncheck runs inside the module, so its URIs are module-relative
+              # (usually just go.mod). Prefix them so code scanning maps them to
+              # files in this repository instead of the repo root.
+              if [ "${mod}" = "." ]; then
+                prefix="${AREA}/"
+              else
+                prefix="${AREA}/${mod}/"
+              fi
+              jq --arg prefix "${prefix}" '
+                walk(if type == "object" and (.artifactLocation? | type) == "object"
+                       and (.artifactLocation.uri? | type) == "string"
+                     then .artifactLocation.uri |=
+                       (if test("^[a-zA-Z][a-zA-Z0-9+.-]*:") then .
+                        elif startswith($prefix) then .
+                        else $prefix + (if startswith("./") then .[2:] else . end) end)
+                     else . end)' "${report}" > "${report}.tmp" \
+                && mv "${report}.tmp" "${report}"
               found=$(jq '[.runs[].results[]? | select(.level == "error")] | length' "${report}" || echo 0)
               hinted=$(jq '[.runs[].results[]? | select(.level == "note")] | length' "${report}" || echo 0)
               reachable=$((reachable + found))
