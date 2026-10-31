@@ -40,6 +40,7 @@ import (
 	dtype "github.com/docker/docker/api/types/registry"
 
 	"github.com/labring/sealos/pkg/sreg/registry/crane"
+	httputils "github.com/labring/sealos/pkg/sreg/utils/http"
 	"github.com/labring/sealos/pkg/sreg/utils/logger"
 )
 
@@ -62,8 +63,8 @@ func ToRegistry(ctx context.Context, opts *Options) error {
 	dst := opts.Target
 	sys := opts.SystemContext
 	reportWriter := opts.ReportWriter
-	srcSys := systemContextWithAuth(sys, opts.Auths, src)
-	dstSys := systemContextWithAuth(sys, opts.Auths, dst)
+	srcSys := systemContextWithAuth(insecureForLoopback(sys, src), opts.Auths, src)
+	dstSys := systemContextWithAuth(insecureForLoopback(sys, dst), opts.Auths, dst)
 
 	policyContext, err := getPolicyContext()
 	if err != nil {
@@ -152,7 +153,9 @@ func isUnsupportedOCIV2S2MediaTypeError(err error) bool {
 
 func remoteCopyImage(src, dst string, auths map[string]dtype.AuthConfig) error {
 	options := crane.GetCraneOptions(auths)
-	options = append(options, gcrane.Insecure)
+	if httputils.InsecureTLS() || httputils.IsLoopbackAddress(dst) {
+		options = append(options, gcrane.Insecure)
+	}
 	return gcrane.Copy(src, dst, options...)
 }
 
@@ -243,10 +246,12 @@ func RegistryToImage(ctx context.Context, sys *types.SystemContext, src types.Im
 			allError = fmt.Errorf("error tearing down policy context: %v", err)
 		}
 	}()
+	srcSys := insecureForLoopback(sys, reference.Domain(src.DockerReference()))
+	dstSys := insecureForLoopback(sys, dst)
 	if err = retry.RetryIfNecessary(ctx, func() error {
 		_, err = copy.Image(ctx, policyContext, destRef, src, &copy.Options{
-			SourceCtx:          sys,
-			DestinationCtx:     sys,
+			SourceCtx:          srcSys,
+			DestinationCtx:     dstSys,
 			ImageListSelection: selection,
 			ReportWriter:       os.Stdout,
 		})
@@ -273,10 +278,11 @@ func ArchiveToImage(ctx context.Context, sys *types.SystemContext, src types.Ima
 			allError = fmt.Errorf("error tearing down policy context: %v", err)
 		}
 	}()
+	dstSys := insecureForLoopback(sys, dst)
 	if err = retry.RetryIfNecessary(ctx, func() error {
 		_, err = copy.Image(ctx, policyContext, destRef, src, &copy.Options{
 			SourceCtx:          sys,
-			DestinationCtx:     sys,
+			DestinationCtx:     dstSys,
 			ImageListSelection: selection,
 			ReportWriter:       os.Stdout,
 		})
@@ -377,6 +383,20 @@ func systemContextWithAuth(base *types.SystemContext, auths map[string]dtype.Aut
 		IdentityToken: auth.IdentityToken,
 	}
 	return ctx
+}
+
+// insecureForLoopback returns a context that may speak plain HTTP to a
+// registry on this machine. The temporary registries started by sealos serve
+// HTTP on loopback, and traffic there cannot be intercepted off-host, so the
+// exception cannot be abused by a network attacker. Remote registries keep the
+// configured (verifying) policy.
+func insecureForLoopback(sys *types.SystemContext, registry string) *types.SystemContext {
+	if sys == nil || !httputils.IsLoopbackAddress(registry) {
+		return sys
+	}
+	cloned := *sys
+	cloned.DockerInsecureSkipTLSVerify = types.OptionalBoolTrue
+	return &cloned
 }
 
 func cloneSystemContext(base *types.SystemContext) *types.SystemContext {

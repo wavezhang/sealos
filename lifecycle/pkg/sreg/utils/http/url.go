@@ -77,6 +77,28 @@ func Transport() *http.Transport {
 	return DefaultTransport
 }
 
+// IsLoopbackAddress reports whether a registry host or host:port points to
+// this machine. Traffic to these addresses never leaves the host, so allowing
+// plain HTTP or an unverified certificate there cannot be intercepted by a
+// network attacker.
+func IsLoopbackAddress(addr string) bool {
+	addr = strings.TrimSpace(addr)
+	addr = strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
+	addr = strings.TrimSuffix(addr, "/")
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
 func IsURL(u string) (*url.URL, bool) {
 	if uu, err := url.Parse(u); err == nil && uu != nil && uu.Host != "" {
 		return uu, true

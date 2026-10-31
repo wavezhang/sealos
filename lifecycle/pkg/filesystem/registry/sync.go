@@ -29,6 +29,7 @@ import (
 
 	"github.com/labring/sealos/pkg/sreg/registry/handler"
 	"github.com/labring/sealos/pkg/sreg/registry/sync"
+	sregutils "github.com/labring/sealos/pkg/sreg/utils/http"
 
 	"github.com/labring/sealos/pkg/constants"
 	"github.com/labring/sealos/pkg/exec"
@@ -269,8 +270,11 @@ func syncViaSSH(_ context.Context, s *impl, target string, localDir string) erro
 }
 
 func syncViaHTTP(ctx context.Context, target string, localDir string) error {
+	// The local registry speaks plain HTTP, but the target registry is remote:
+	// only skip verification when the user opted out. ToRegistry grants the
+	// loopback exception for the source it knows about.
 	sys := &types.SystemContext{
-		DockerInsecureSkipTLSVerify: types.OptionalBoolTrue,
+		DockerInsecureSkipTLSVerify: types.NewOptionalBool(sregutils.InsecureTLS()),
 	}
 
 	config, err := handler.NewConfig(localDir, 0)

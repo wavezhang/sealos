@@ -89,3 +89,27 @@ func TestWaitUntilEndpointAlive(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLoopbackAddress(t *testing.T) {
+	tests := []struct {
+		addr string
+		want bool
+	}{
+		{"127.0.0.1:5000", true},
+		{"localhost:5050", true},
+		{"LOCALHOST", true},
+		{"[::1]:5000", true},
+		{"http://127.0.0.1:55304/", true},
+		{"https://localhost:443", true},
+		{"127.0.0.2:5000", true},
+		{"registry.example.com:5000", false},
+		{"192.168.1.10:5000", false},
+		{"10.0.0.1", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := IsLoopbackAddress(tt.addr); got != tt.want {
+			t.Errorf("IsLoopbackAddress(%q) = %v, want %v", tt.addr, got, tt.want)
+		}
+	}
+}
