@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -29,7 +30,6 @@ import (
 	"github.com/labring/sealos/pkg/template"
 	"github.com/labring/sealos/pkg/utils/file"
 	"github.com/labring/sealos/pkg/utils/logger"
-	"golang.org/x/exp/slices"
 )
 
 func NotInIPList(slice []string, key string) bool {

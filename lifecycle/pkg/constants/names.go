@@ -22,10 +22,11 @@ import (
 	"regexp"
 )
 
-// clusterNameRe follows the Kubernetes DNS-1123 label rules. Cluster names
-// become path segments and shell arguments, so anything outside this set is
-// rejected instead of being escaped.
-var clusterNameRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+// clusterNameRe allows the characters accepted by container names and keeps
+// cluster names usable as a single path segment. Shell metacharacters, path
+// separators and leading dots or dashes are rejected so a name cannot escape
+// the sealos data directory or be mistaken for a command-line flag.
+var clusterNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 // ValidateClusterName rejects empty or unsafe cluster names.
 func ValidateClusterName(name string) error {

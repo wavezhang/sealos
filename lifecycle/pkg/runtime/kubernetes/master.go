@@ -107,7 +107,7 @@ func (k *KubeadmRuntime) imagePull(hostAndPort, version string) error {
 	logger.Info("start to pull images: %s", strings.Join(newImageList, ", "))
 
 	for _, image := range newImageList {
-		imagePullCmd := fmt.Sprintf("crictl pull %s", str2.ShellQuote(image))
+		imagePullCmd := "crictl pull " + str2.ShellQuote(image)
 		if err := k.sshCmdAsync(hostAndPort, imagePullCmd); err != nil {
 			return fmt.Errorf("pull image %s failed, error: %s", image, err.Error())
 		}

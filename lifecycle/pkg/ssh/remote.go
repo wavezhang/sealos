@@ -128,7 +128,7 @@ func (s *Remote) Socket(ip string) (string, error) {
 func (s *Remote) Cert(
 	ip string,
 	altNames []string,
-	nodeIP, nodeName, serviceCIRD, DNSDomain string,
+	nodeIP, nodeName, serviceCIRD, dnsDomain string,
 ) error {
 	certTemplate := `cert \
 	{{if .nodeIP}} --node-ip {{.nodeIP}}{{end}}{{if .nodeName}} --node-name {{.nodeName}}{{end}} \
@@ -138,7 +138,7 @@ func (s *Remote) Cert(
 		"nodeIP":      stringsutil.ShellQuote(nodeIP),
 		"nodeName":    stringsutil.ShellQuote(nodeName),
 		"serviceCIDR": stringsutil.ShellQuote(serviceCIRD),
-		"dnsDomain":   stringsutil.ShellQuote(DNSDomain),
+		"dnsDomain":   stringsutil.ShellQuote(dnsDomain),
 		"altNames":    quoteAll(altNames),
 	}
 	out, err := template.RenderTemplate("cert", certTemplate, data)

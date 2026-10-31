@@ -133,8 +133,12 @@ func newCreateCmd() *cobra.Command {
 			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
+			realBder, ok := bder.(*realImpl)
+			if !ok {
+				return fmt.Errorf("unexpected buildah driver type %T", bder)
+			}
 			mountEnvs, unmountMounts, err := unshareMount(
-				bder.(*realImpl).store,
+				realBder.store,
 				[]string{info.ContainerID},
 			)
 			if err != nil {

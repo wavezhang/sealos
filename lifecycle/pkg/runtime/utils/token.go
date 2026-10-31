@@ -50,15 +50,11 @@ func GenerateToken(config, certificateKey string) (*types.Token, error) {
 			key = certificateKey
 		}
 		token.CertificateKey = key
-		uploadCertTemplate := fmt.Sprintf(
-			"kubeadm init phase upload-certs --upload-certs --certificate-key %s",
-			stringsutil.ShellQuote(key),
-		)
+		uploadCertTemplate := "kubeadm init phase upload-certs --upload-certs --certificate-key " +
+			stringsutil.ShellQuote(key)
 		if config != "" {
-			uploadCertTemplate = fmt.Sprintf(
-				"kubeadm init phase upload-certs --config %s --upload-certs",
-				stringsutil.ShellQuote(config),
-			)
+			uploadCertTemplate = "kubeadm init phase upload-certs --config " +
+				stringsutil.ShellQuote(config) + " --upload-certs"
 		}
 		logger.Debug("token uploadCertTemplate cmd: %s", uploadCertTemplate)
 		if _, err := exec.RunBashCmd(uploadCertTemplate); err != nil {
