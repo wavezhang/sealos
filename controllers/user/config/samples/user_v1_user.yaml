@@ -20,7 +20,7 @@ metadata:
     user.sealos.io/owner: aaaa0001
   name: aaaa0001
 spec:
-  csrExpirationSeconds: 1000000000
+  csrExpirationSeconds: 604800
   kubeConfigRotateAt: "2026-01-19T14:55:00Z"
 ---
 # group

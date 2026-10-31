@@ -23,16 +23,43 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const DefaultCSRExpirationSeconds int32 = 1_000_000_000
+// Credential lifetime policy. Issued kubeconfig credentials are short-lived by
+// design. The requested lifetime is clamped when a credential is issued, not
+// when the User object is written, so objects that still carry the legacy
+// 1_000_000_000 second default keep validating while their credentials are
+// re-issued with the current maximum.
+const (
+	// DefaultCSRExpirationSeconds is the lifetime used when the requested value
+	// is absent or below MinCSRExpirationSeconds (7 days).
+	DefaultCSRExpirationSeconds int32 = 7 * 24 * 60 * 60
+	// MinCSRExpirationSeconds is the smallest accepted request (10 minutes).
+	// Shorter values are treated as unset and use DefaultCSRExpirationSeconds.
+	MinCSRExpirationSeconds int32 = 10 * 60
+	// MaxCSRExpirationSeconds is the hard upper bound for issued credentials
+	// (30 days). Longer requests are clamped to this value.
+	MaxCSRExpirationSeconds int32 = 30 * 24 * 60 * 60
+)
 
-// NormalizeCSRExpirationSeconds returns the effective expiration duration
-// used when issuing credentials. Values below the minimum are preserved by
-// the API object and only raised at the point where they are consumed.
+// NormalizeCSRExpirationSeconds returns the effective lifetime used when
+// issuing credentials. The policy is:
+//
+//   - value < MinCSRExpirationSeconds: DefaultCSRExpirationSeconds
+//   - MinCSRExpirationSeconds <= value <= MaxCSRExpirationSeconds: value
+//   - value > MaxCSRExpirationSeconds: MaxCSRExpirationSeconds
+//
+// The requested value is preserved on the API object and only normalized at
+// issuance time, so existing objects (for example ones defaulted to the legacy
+// 1000000000 seconds) are re-issued with the maximum lifetime without a CRD
+// migration.
 func NormalizeCSRExpirationSeconds(value int32) int32 {
-	if value < DefaultCSRExpirationSeconds {
+	switch {
+	case value < MinCSRExpirationSeconds:
 		return DefaultCSRExpirationSeconds
+	case value > MaxCSRExpirationSeconds:
+		return MaxCSRExpirationSeconds
+	default:
+		return value
 	}
-	return value
 }
 
 // UserSpec defines the desired state of User
@@ -42,10 +69,13 @@ type UserSpec struct {
 	// validity duration so a client must check the issued credential to determine
 	// the actual duration.
 	//
-	// The minimum effective value for expirationSeconds is 1_000_000_000 seconds.
+	// The effective lifetime is clamped when the credential is issued: values
+	// below 600 seconds (including 0) use the default of 604800 seconds (7 days),
+	// and values above 2592000 seconds (30 days) are reduced to 2592000 seconds.
+	// The controller renews the kubeconfig at half of the effective lifetime.
 	//
 	// +optional
-	//+kubebuilder:default:=1000000000
+	//+kubebuilder:default:=604800
 	CSRExpirationSeconds int32 `json:"csrExpirationSeconds,omitempty"`
 	// kubeConfigRotateAt 用于手动触发 kubeconfig 轮转。
 	// 当字段被设置或更新时，controller 会重新请求 token 并重建 kubeconfig。
@@ -75,14 +105,15 @@ type UserStatus struct {
 	//+kubebuilder:default:=Unknown
 	Phase      UserPhase `json:"phase,omitempty"`
 	KubeConfig string    `json:"kubeConfig"`
-	//+kubebuilder:default:=1000000000
+	//+kubebuilder:default:=604800
 	ObservedCSRExpirationSeconds int32 `json:"observedCSRExpirationSeconds,omitempty"`
 	// ObservedKubeConfigRotateAt 记录已处理的轮转请求时间戳。
 	// +optional
 	ObservedKubeConfigRotateAt *metav1.Time `json:"observedKubeConfigRotateAt,omitempty"`
 	// KubeConfigRefreshAt is the next time the controller should refresh the
-	// kubeconfig token. It is persisted so a controller restart keeps the
-	// token refresh schedule without retaining the kubeconfig payload in cache.
+	// kubeconfig token: half of the lifetime of the currently issued credential.
+	// It is persisted so a controller restart keeps the token refresh schedule
+	// without retaining the kubeconfig payload in cache.
 	// +optional
 	KubeConfigRefreshAt *metav1.Time `json:"kubeConfigRefreshAt,omitempty"`
 	// ObservedKubeConfigSecretUID identifies the Secret bound to the current

@@ -39,9 +39,9 @@ func TestNextKubeConfigRequeueDuration(t *testing.T) {
 	if got := nextKubeConfigRequeueDuration(
 		nil,
 		state,
-	); got < 7*time.Hour+59*time.Minute ||
-		got > 8*time.Hour {
-		t.Fatalf("new token refresh requeue duration = %v, want about 8h", got)
+	); got < 4*time.Hour+59*time.Minute ||
+		got > 5*time.Hour {
+		t.Fatalf("new token refresh requeue duration = %v, want about 5h", got)
 	}
 
 	past := metav1.NewTime(time.Now().Add(-time.Minute))

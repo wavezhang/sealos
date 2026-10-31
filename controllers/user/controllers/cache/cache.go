@@ -183,7 +183,9 @@ func projectUserStatus(status userv1.UserStatus) userv1.UserStatus {
 
 // inferKubeConfigRefreshAt derives the refresh point from legacy JWT-backed
 // kubeconfigs while projecting the object. The payload is parsed and dropped;
-// the cache never retains the credential itself.
+// the cache never retains the credential itself. Controller-issued tokens
+// persist their own refresh deadline; this inference keeps the historical 80%
+// schedule for legacy objects that have none.
 func inferKubeConfigRefreshAt(user *userv1.User) *metav1.Time {
 	if user == nil || user.Status.KubeConfig == "" {
 		return nil

@@ -49,7 +49,7 @@ spec:
               description: UserSpec defines the desired state of User
               properties:
                 csrExpirationSeconds:
-                  default: 1000000000
+                  default: 604800
                   description: |-
                     expirationSeconds is the requested duration of validity of the issued
                     kubeconfig credential. The issuer may issue a credential with a different
@@ -57,7 +57,10 @@ spec:
                     the actual duration.
                     
                     
-                    The minimum effective value for expirationSeconds is 1_000_000_000 seconds.
+                    The effective lifetime is clamped when the credential is issued: values
+                    below 600 seconds (including 0) use the default of 604800 seconds (7 days),
+                    and values above 2592000 seconds (30 days) are reduced to 2592000 seconds.
+                    The controller renews the kubeconfig at half of the effective lifetime.
                   format: int32
                   type: integer
                 kubeConfigRotateAt:
@@ -107,7 +110,7 @@ spec:
                 kubeConfig:
                   type: string
                 observedCSRExpirationSeconds:
-                  default: 1000000000
+                  default: 604800
                   format: int32
                   type: integer
                 observedKubeConfigRotateAt:
@@ -116,8 +119,11 @@ spec:
                   format: date-time
                   type: string
                 kubeConfigRefreshAt:
-                  description: KubeConfigRefreshAt is the next time the controller
-                    should refresh the kubeconfig token.
+                  description: |-
+                    KubeConfigRefreshAt is the next time the controller should refresh the
+                    kubeconfig token: half of the lifetime of the currently issued credential.
+                    It is persisted so a controller restart keeps the token refresh schedule
+                    without retaining the kubeconfig payload in cache.
                   format: date-time
                   type: string
                 observedKubeConfigSecretUID:
