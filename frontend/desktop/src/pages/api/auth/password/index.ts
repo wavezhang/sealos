@@ -26,15 +26,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!enablePassword()) {
       throw new Error('PASSWORD_SALT is not defined');
     }
-    // Type/presence checks only sanitise input; authentication is decided by
-    // getGlobalToken below, not by these conditions.
-    if (!name || !password) {
-      return jsonRes(res, {
-        message: INVALID_CREDENTIALS_MESSAGE,
-        code: 400
-      });
-    }
-
+    // Input is type-normalised above. Presence is deliberately not checked
+    // here: rejecting empty values before the credential check would make this
+    // request-controlled branch a gate for authentication. getGlobalToken
+    // handles missing credentials and fails closed like a wrong password.
     const rateLimit = checkPasswordLoginAllowed(rateLimitKey);
     if (!rateLimit.allowed) {
       res.setHeader('Retry-After', String(rateLimit.retryAfter));
@@ -64,11 +59,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    if (!data)
+    if (!data) {
+      // Missing or empty credentials fail closed and count toward the throttle
+      // exactly like a wrong password.
+      recordPasswordLoginFailure(rateLimitKey);
       return jsonRes(res, {
         code: 401,
-        message: 'Unauthorized'
+        message: INVALID_CREDENTIALS_MESSAGE
       });
+    }
     resetPasswordLoginFailures(rateLimitKey);
     return jsonRes(res, {
       data: {
