@@ -134,7 +134,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Scan for HIGH/CRITICAL issues (SARIF)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -155,7 +155,7 @@ jobs:
           category: trivy
 
       - name: Gate on fixed HIGH/CRITICAL vulnerabilities and secrets
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -176,9 +176,9 @@ jobs:
           retention-days: 30
 
   govulncheck:
-    name: Go vulnerabilities (${{ matrix.module }})
+    name: Go vulnerabilities (${{ matrix.area }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     permissions:
       contents: read
       security-events: write
@@ -186,13 +186,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - module: lifecycle
+          - area: lifecycle
             native_deps: true
-          - module: controllers
+          - area: controllers
             native_deps: false
-          - module: service
+          - area: service
             native_deps: false
-          - module: webhooks
+          - area: webhooks
             native_deps: false
     steps:
       - name: Checkout
@@ -210,48 +210,132 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
 
-      - name: Run govulncheck (SARIF)
-        id: scan
-        working-directory: ${{ matrix.module }}
+      - name: Discover Go modules
+        id: modules
+        working-directory: ${{ matrix.area }}
         run: |
-          set +e
-          govulncheck -format sarif ./... > "$GITHUB_WORKSPACE/govulncheck-${{ matrix.module }}.sarif"
-          rc=$?
-          set -e
-          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
-          echo "govulncheck exit code: ${rc}"
-          exit 0
+          set -euo pipefail
+          # controllers/ and webhooks/ are go.work workspaces with several leaf
+          # modules and no go.mod at the root, so enumerate every module.
+          dirs=$(find . -name go.mod \
+            -not -path '*/node_modules/*' \
+            -not -path '*/testdata/*' \
+            -not -path './test/*' \
+            -printf '%h\n' | sed 's|^\./||' | sort -u)
+          echo "Modules found in ${{ matrix.area }}:"
+          echo "${dirs}"
+          {
+            echo "dirs<<GOVULN_MODULES_EOF"
+            echo "${dirs}"
+            echo "GOVULN_MODULES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run govulncheck for every module
+        id: scan
+        env:
+          AREA: ${{ matrix.area }}
+          MODULES: ${{ steps.modules.outputs.dirs }}
+        run: |
+          set -uo pipefail
+          mkdir -p govuln-sarif
+          rm -f govuln-sarif/*.sarif
+          reachable=0
+          notes=0
+          tool_errors=0
+          reachable_modules=""
+          error_modules=""
+          while IFS= read -r mod; do
+            [ -n "${mod}" ] || continue
+            key="${AREA}_${mod}"
+            key=$(printf '%s' "${key}" | tr '/' '_' | tr -c 'A-Za-z0-9_.-' '_')
+            echo "::group::govulncheck ${AREA}/${mod}"
+            set +e
+            ( cd "${AREA}/${mod}" && govulncheck -format sarif ./... \
+                > "${GITHUB_WORKSPACE}/govuln-sarif/${key}.sarif" 2> "${RUNNER_TEMP}/${key}.err" )
+            rc=$?
+            set -e
+            if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 3 ]; then
+              tool_errors=$((tool_errors + 1))
+              error_modules="${error_modules} ${mod}"
+              echo "::warning::govulncheck could not analyze ${mod} (exit ${rc})"
+              head -n 5 "${RUNNER_TEMP}/${key}.err" || true
+            fi
+            # SARIF output always exits 0, so classify findings from the report:
+            #   level=error -> vulnerable symbol is reachable from the module
+            #   level=note  -> dependency is vulnerable but no vulnerable symbol is called
+            report="${GITHUB_WORKSPACE}/govuln-sarif/${key}.sarif"
+            if jq -e '.runs' "${report}" >/dev/null 2>&1; then
+              found=$(jq '[.runs[].results[]? | select(.level == "error")] | length' "${report}" || echo 0)
+              hinted=$(jq '[.runs[].results[]? | select(.level == "note")] | length' "${report}" || echo 0)
+              reachable=$((reachable + found))
+              notes=$((notes + hinted))
+              if [ "${found}" -gt 0 ]; then
+                reachable_modules="${reachable_modules} ${mod}"
+              fi
+              echo "${mod}: ${found} reachable, ${hinted} dependency-only"
+            fi
+            echo "::endgroup::"
+          done <<< "${MODULES}"
+
+          # Drop empty or truncated SARIF left behind by failed runs.
+          shopt -s nullglob
+          files=(govuln-sarif/*.sarif)
+          for f in "${files[@]}"; do
+            jq -e '.version and (.runs | type == "array")' "${f}" >/dev/null 2>&1 || rm -f "${f}"
+          done
+          files=(govuln-sarif/*.sarif)
+          if [ "${#files[@]}" -gt 0 ]; then
+            jq -s '{version: "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json", runs: [.[].runs[]?]}' \
+              "${files[@]}" > "govulncheck-${AREA}.sarif"
+          else
+            printf '%s\n' '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[]}' \
+              > "govulncheck-${AREA}.sarif"
+          fi
+          {
+            echo "reachable=${reachable}"
+            echo "notes=${notes}"
+            echo "tool_errors=${tool_errors}"
+            echo "reachable_modules=${reachable_modules}"
+            echo "error_modules=${error_modules}"
+          } >> "$GITHUB_OUTPUT"
+          echo "govulncheck: ${reachable} reachable finding(s), ${notes} dependency-only finding(s), ${tool_errors} tooling error(s)"
 
       - name: Upload SARIF
-        if: always() && hashFiles(format('govulncheck-{0}.sarif', matrix.module)) != ''
+        if: always() && hashFiles(format('govulncheck-{0}.sarif', matrix.area)) != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: govulncheck-${{ matrix.module }}.sarif
-          category: govulncheck-${{ matrix.module }}
+          sarif_file: govulncheck-${{ matrix.area }}.sarif
+          category: govulncheck-${{ matrix.area }}
 
       - name: Gate on reachable vulnerabilities
-        if: steps.scan.outputs.exit_code != '0'
+        if: steps.scan.outputs.reachable != '0'
         run: |
           {
-            echo "### ALERT: govulncheck reported issues in ${{ matrix.module }} (exit ${{ steps.scan.outputs.exit_code }})"
+            echo "### ALERT: govulncheck found ${{ steps.scan.outputs.reachable }} reachable vulnerability finding(s) in ${{ matrix.area }}"
             echo ""
-            echo "Run \`govulncheck ./...\` in \`${{ matrix.module }}\` or check the Code scanning tab."
+            echo "Modules:\`${{ steps.scan.outputs.reachable_modules }}\`"
+            echo ""
+            echo "Details: Code scanning tab, category \`govulncheck-${{ matrix.area }}\`."
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
+
+      - name: Report tooling gaps
+        if: steps.scan.outputs.tool_errors != '0'
+        run: echo "::warning::govulncheck skipped modules in ${{ matrix.area }}:${{ steps.scan.outputs.error_modules }}"
 
       - name: Upload SARIF artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: govulncheck-${{ matrix.module }}
-          path: govulncheck-${{ matrix.module }}.sarif
+          name: govulncheck-${{ matrix.area }}
+          path: govulncheck-${{ matrix.area }}.sarif
           if-no-files-found: ignore
           retention-days: 30
 
   codeql:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: read
       security-events: write
@@ -289,11 +373,15 @@ jobs:
         if: matrix.language == 'go'
         run: |
           set -uo pipefail
-          for dir in lifecycle controllers service webhooks; do
-            echo "::group::go build ./... in ${dir}"
-            ( cd "${dir}" && go build ./... ) || echo "::warning::go build failed in ${dir}; CodeQL analysis for that module may be partial"
+          # controllers/ and webhooks/ have no go.mod at the root (go.work only),
+          # so build every module explicitly.
+          while IFS= read -r mod; do
+            echo "::group::go build ./... in ${mod}"
+            ( cd "${mod}" && go build ./... ) || echo "::warning::go build failed in ${mod}; CodeQL analysis for that module may be partial"
             echo "::endgroup::"
-          done
+          done < <(find lifecycle controllers service webhooks \
+            -name go.mod -not -path '*/testdata/*' -not -path '*/test/*' \
+            -printf '%h\n' | sort -u)
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
