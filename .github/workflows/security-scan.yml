@@ -306,12 +306,53 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "govulncheck: ${reachable} reachable finding(s), ${notes} dependency-only finding(s), ${tool_errors} tooling error(s)"
 
-      - name: Upload SARIF
-        if: always() && hashFiles(format('govulncheck-{0}.sarif', matrix.area)) != ''
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: govulncheck-${{ matrix.area }}.sarif
-          category: govulncheck-${{ matrix.area }}
+      # github/codeql-action/upload-sarif refuses more than one run per category, and
+      # a merged govulncheck report holds one run per Go module. Push each run through
+      # the code scanning API under its own category instead.
+      - name: Upload SARIF (one category per module)
+        if: always() && hashFiles('govuln-sarif/*.sarif') != ''
+        env:
+          AREA: ${{ matrix.area }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          status=0
+          for f in govuln-sarif/*.sarif; do
+            base="govulncheck-${AREA}/$(basename "${f}" .sarif)"
+            runs=$(jq '.runs | length' "${f}" 2>/dev/null || echo 0)
+            [ "${runs}" -gt 0 ] || { echo "::warning::no SARIF runs in ${f}"; continue; }
+            for ((i = 0; i < runs; i++)); do
+              cat_name="${base}"
+              [ "${runs}" -eq 1 ] || cat_name="${base}-${i}"
+              jq --argjson i "${i}" \
+                '{version:"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json",runs:[.runs[$i]]}' \
+                "${f}" > "${RUNNER_TEMP}/upload.sarif"
+              # Stage the base64 body in a file: passing it as a jq argument would
+              # exceed the per-argument size limit for larger reports.
+              gzip -c "${RUNNER_TEMP}/upload.sarif" | base64 -w 0 > "${RUNNER_TEMP}/upload.sarif.b64"
+              jq -n \
+                --arg sha "${GITHUB_SHA}" \
+                --arg ref "${GITHUB_REF}" \
+                --arg cat "${cat_name}" \
+                --rawfile sarif "${RUNNER_TEMP}/upload.sarif.b64" \
+                '{commit_sha:$sha, ref:$ref, sarif:$sarif, tool_name:"govulncheck", category:$cat}' \
+                > "${RUNNER_TEMP}/upload.json"
+              resp=$(curl -sS --retry 3 --retry-delay 2 -X POST \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/code-scanning/sarifs" \
+                --data-binary @"${RUNNER_TEMP}/upload.json") || resp=""
+              if [ -n "$(jq -r '.id // empty' <<< "${resp}" 2>/dev/null)" ]; then
+                echo "uploaded ${cat_name}: $(jq -r '.id' <<< "${resp}")"
+              else
+                echo "::warning::SARIF upload failed for ${cat_name}: ${resp}"
+                status=1
+              fi
+            done
+          done
+          exit "${status}"
 
       # Repo-wide debt gate, same policy as Trivy: main/schedule only. PRs rely on
       # the code scanning check for newly introduced reachable vulnerabilities.
@@ -323,7 +364,7 @@ jobs:
             echo ""
             echo "Modules:\`${{ steps.scan.outputs.reachable_modules }}\`"
             echo ""
-            echo "Details: Code scanning tab, category \`govulncheck-${{ matrix.area }}\`."
+            echo "Details: Code scanning tab, categories \`govulncheck-${{ matrix.area }}/*\`."
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
