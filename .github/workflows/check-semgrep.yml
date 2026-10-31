@@ -46,7 +46,7 @@ jobs:
 
     steps:
       # Fetch project source with GitHub Actions Checkout.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Run the "semgrep ci" command on the command line of the docker image.
       - run: |
           # On pushes, compare only against the previous commit so existing findings do not re-break main.

@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout the latest code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -39,7 +39,7 @@ jobs:
         id: pr_title
         env:
           PR_NUMBER: ${{ inputs.prNumber }}
-        uses: actions/github-script@v6
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -48,7 +48,7 @@ jobs:
               pull_number: Number(process.env.PR_NUMBER)
             });
             return pr.data.title;
-      - uses: peter-evans/create-pull-request@v5
+      - uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5
         with:
           title: ${{ fromJSON(steps.pr_title.outputs.result) }}
           body: |

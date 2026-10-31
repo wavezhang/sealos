@@ -22,7 +22,7 @@ jobs:
       pull-requests: write
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - run: |
@@ -67,7 +67,7 @@ jobs:
         run: |
           echo "Running command: ${{ steps.tagpr.outputs.command }}"
           eval "${{ steps.tagpr.outputs.command }}"
-      - uses: peter-evans/create-pull-request@v5
+      - uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5
         if: ${{ (github.event_name == 'workflow_dispatch') && (steps.tagpr.outputs.version != '') }}
         with:
           title: 'Release ${{ steps.tagpr.outputs.name }} note and fix version for ${{ steps.tagpr.outputs.version }}'
@@ -99,7 +99,7 @@ jobs:
           git remote set-url origin https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git push -f origin ${{ steps.tagpr.outputs.version }}
       - name: Trigger Release Workflow(only when tagged)
-        uses: actions/github-script@v6
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
         if: ${{ (github.event_name == 'push') && (steps.tagpr.outputs.version != '') }}
         with:
           script: |

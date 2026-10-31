@@ -64,10 +64,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Golang with cache
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -75,7 +75,7 @@ jobs:
         run: sudo apt update && sudo apt install -y libgpgme-dev libbtrfs-dev libdevmapper-dev
 
       - name: Run Linter
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
         with:
           version: v2.12.2
           working-directory: controllers/${{ inputs.module_path }}
@@ -86,10 +86,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Golang with cache
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -109,12 +109,12 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Golang with cache
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -154,15 +154,15 @@ jobs:
           fi
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@2b82ce82d56a2a04d2637cd93a637ae1b359c0a7 # v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
           driver-opts: network=host
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: ${{ inputs.push_image }}
         with:
           registry: ghcr.io
@@ -170,7 +170,7 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Login to Aliyun Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: ${{ inputs.push_image && env.ALIYUN_REGISTRY }}
         with:
           registry: ${{ env.ALIYUN_REGISTRY }}
@@ -179,7 +179,7 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
             ${{ env.GHCR_REPO }}
@@ -194,7 +194,7 @@ jobs:
           DOCKER_METADATA_SHORT_SHA_LENGTH: 9
 
       - name: build (and publish) ${{ inputs.module_name }} main image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./controllers/${{ inputs.module_path }}
           file: ./controllers/${{ inputs.module_path }}/Dockerfile
@@ -213,7 +213,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -234,7 +234,7 @@ jobs:
 
       - name: Docker meta for cluster image
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
             ${{ env.GHCR_CLUSTER_REPO }}
