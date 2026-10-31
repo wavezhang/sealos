@@ -147,6 +147,9 @@ export type AuthConfigType = {
       proxyAddress?: string;
       clientID: string;
       clientSecret?: string;
+      // Token configured in the WeChat official account callback settings.
+      // Server-only; never exposed through the client config.
+      callbackToken?: string;
     };
     google?: {
       enabled: boolean;
@@ -223,6 +226,7 @@ export type AuthClientConfigType = {
       'idp.password.salt',
       'idp.github.clientSecret',
       'idp.wechat.clientSecret',
+      'idp.wechat.callbackToken',
       'idp.google.clientSecret',
       'idp.sms',
       'idp.email',

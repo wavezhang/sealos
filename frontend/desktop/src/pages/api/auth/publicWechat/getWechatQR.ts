@@ -1,7 +1,28 @@
-import { getWeChatAccessToken } from '@/services/backend/db/wechatCode';
+import {
+  WECHAT_LOGIN_TICKET_COOKIE,
+  WECHAT_LOGIN_TICKET_TTL_MS,
+  createWechatLoginTicket,
+  getWeChatAccessToken
+} from '@/services/backend/db/wechatCode';
 import { jsonRes } from '@/services/backend/response';
 import { nanoid } from 'nanoid';
 import { NextApiRequest, NextApiResponse } from 'next';
+
+const isHttpsRequest = (req: NextApiRequest) => {
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  return proto === 'https' || Boolean((req.socket as { encrypted?: boolean })?.encrypted);
+};
+
+const serializeWechatTicketCookie = (ticket: string, secure: boolean) =>
+  [
+    `${WECHAT_LOGIN_TICKET_COOKIE}=${ticket}`,
+    'Path=/api/auth/publicWechat',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${Math.floor(WECHAT_LOGIN_TICKET_TTL_MS / 1000)}`,
+    ...(secure ? ['Secure'] : [])
+  ].join('; ');
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -36,6 +57,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const qrCodeUrl = `https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=${encodeURIComponent(
       ticketInfo.ticket
     )}`;
+
+    // Bind the QR scene to this browser. The raw ticket only ever travels in an
+    // HttpOnly cookie; the database stores its hash.
+    const loginTicket = await createWechatLoginTicket(sceneStr);
+    res.setHeader('Set-Cookie', serializeWechatTicketCookie(loginTicket, isHttpsRequest(req)));
 
     return jsonRes(res, {
       code: 200,
