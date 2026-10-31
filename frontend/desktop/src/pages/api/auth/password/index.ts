@@ -15,20 +15,26 @@ import { ProviderType } from 'prisma/global/generated/client';
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid username or password.';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  let rateLimitKey: string | null = null;
+  const body = req.body ?? {};
+  const name = typeof body.user === 'string' ? body.user.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  const { semData, adClickData } = body;
+  // Throttle state is keyed on the client address and the supplied name, and
+  // the key is always computed so malformed requests cannot skip accounting.
+  const rateLimitKey = getPasswordLoginRateLimitKey(req, name);
   try {
     if (!enablePassword()) {
       throw new Error('PASSWORD_SALT is not defined');
     }
-    const { user: name, password, semData, adClickData } = req.body;
-    if (typeof name !== 'string' || !name.trim() || typeof password !== 'string') {
+    // Type/presence checks only sanitise input; authentication is decided by
+    // getGlobalToken below, not by these conditions.
+    if (!name || !password) {
       return jsonRes(res, {
         message: INVALID_CREDENTIALS_MESSAGE,
         code: 400
       });
     }
 
-    rateLimitKey = getPasswordLoginRateLimitKey(req, name);
     const rateLimit = checkPasswordLoginAllowed(rateLimitKey);
     if (!rateLimit.allowed) {
       res.setHeader('Retry-After', String(rateLimit.retryAfter));
@@ -81,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       err instanceof AuthError &&
       (err.errorCode === 'USER_NOT_FOUND' || err.errorCode === 'INCORRECT_PASSWORD')
     ) {
-      if (rateLimitKey) recordPasswordLoginFailure(rateLimitKey);
+      recordPasswordLoginFailure(rateLimitKey);
       return jsonRes(res, {
         message: INVALID_CREDENTIALS_MESSAGE,
         code: 401
