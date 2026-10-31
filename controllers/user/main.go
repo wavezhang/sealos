@@ -299,6 +299,10 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Operationrequest")
 			os.Exit(1)
 		}
+		if err = (&userv1.DeleteRequest{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "DeleteRequest")
+			os.Exit(1)
+		}
 	}
 	if err = (&controllers.DeleteRequestReconciler{
 		Client: mgr.GetClient(),

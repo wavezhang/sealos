@@ -25,6 +25,8 @@ import (
 
 	"github.com/go-logr/logr"
 	userv1 "github.com/labring/sealos/controllers/user/api/v1"
+	"github.com/labring/sealos/controllers/user/controllers/helper"
+	"github.com/labring/sealos/controllers/user/controllers/helper/authz"
 	"github.com/labring/sealos/controllers/user/controllers/helper/config"
 	"github.com/labring/sealos/controllers/user/controllers/helper/ratelimiter"
 	v1 "k8s.io/api/core/v1"
@@ -51,8 +53,11 @@ type OperationReqReconciler struct {
 	Logger   logr.Logger
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
-	locks    keymutex.KeyMutex
-	lockOnce sync.Once
+	// Authorizer re-checks the creator recorded by the admission webhook before
+	// any role binding is created.
+	Authorizer authz.Authorizer
+	locks      keymutex.KeyMutex
+	lockOnce   sync.Once
 
 	// expirationTime is the time duration of the request is expired
 	expirationTime time.Duration
@@ -87,6 +92,9 @@ func (r *OperationReqReconciler) SetupWithManager(
 		r.Recorder = mgr.GetEventRecorderFor(controllerName)
 	}
 	r.Scheme = mgr.GetScheme()
+	if r.Authorizer == nil {
+		r.Authorizer = authz.NewClientAuthorizer(mgr.GetClient())
+	}
 	r.expirationTime = expTime
 	r.retentionTime = retTime
 	r.Logger.V(1).Info("init reconcile operationrequest controller")
@@ -171,8 +179,30 @@ func (r *OperationReqReconciler) reconcile(
 		return ctrl.Result{}, nil
 	}
 
+	// Re-validate the creator recorded by the admission webhook. The webhook is
+	// the primary gate; this check protects requests that were created while the
+	// webhook was disabled or whose creator lost the permission afterwards.
+	allowed, reason, err := r.authorize(ctx, request)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !allowed {
+		r.Logger.Info("operation request denied", append(getLog(request), "reason", reason)...)
+		r.Recorder.Eventf(
+			request,
+			v1.EventTypeWarning,
+			"Unauthorized",
+			"OperationRequest denied: %s",
+			reason,
+		)
+		if err := r.denyRequest(ctx, request, reason); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// update OperationRequest status to processing
-	err := r.updateRequestStatus(ctx, request, userv1.RequestProcessing)
+	err = r.updateRequestStatus(ctx, request, userv1.RequestProcessing)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -371,6 +401,49 @@ func (r *OperationReqReconciler) patchUserOwner(
 	}
 	user.Annotations[userv1.UserAnnotationOwnerKey] = owner
 	return r.Patch(ctx, user, client.MergeFrom(original))
+}
+
+func (r *OperationReqReconciler) authorizer() authz.Authorizer {
+	if r.Authorizer != nil {
+		return r.Authorizer
+	}
+	return authz.NewClientAuthorizer(r.Client)
+}
+
+func (r *OperationReqReconciler) authorize(
+	ctx context.Context,
+	request *userv1.Operationrequest,
+) (bool, string, error) {
+	creator := request.Annotations[userv1.UserAnnotationCreatorKey]
+	if creator == "" {
+		return false, "operation request does not record an authenticated creator", nil
+	}
+	return authz.OperationRequestDecision(
+		ctx,
+		r.authorizer(),
+		authz.Identity{Username: creator},
+		request.Spec.User,
+		request.Spec.Namespace,
+	)
+}
+
+// denyRequest marks a request as failed and records an explicit condition so
+// that the rejection is visible on the object.
+func (r *OperationReqReconciler) denyRequest(
+	ctx context.Context,
+	request *userv1.Operationrequest,
+	message string,
+) error {
+	now := metav1.Now()
+	request.Status.Conditions = helper.UpdateCondition(request.Status.Conditions, userv1.Condition{
+		Type:               userv1.Authorized,
+		Status:             v1.ConditionFalse,
+		LastHeartbeatTime:  now,
+		LastTransitionTime: now,
+		Reason:             "Unauthorized",
+		Message:            message,
+	})
+	return r.updateRequestStatus(ctx, request, userv1.RequestFailed)
 }
 
 // isRetained returns true if the request is isCompleted and exist for retention time

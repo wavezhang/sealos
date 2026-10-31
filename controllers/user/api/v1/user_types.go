@@ -101,6 +101,9 @@ type ConditionType string
 const (
 	Initialized ConditionType = "Initialized"
 	Ready       ConditionType = "Ready"
+	// Authorized reports whether the creator of an OperationRequest or
+	// DeleteRequest was still authorized when the controller handled it.
+	Authorized ConditionType = "Authorized"
 )
 
 type Condition struct {

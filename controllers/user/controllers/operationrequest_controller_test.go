@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-logr/logr"
 	userv1 "github.com/labring/sealos/controllers/user/api/v1"
+	"github.com/labring/sealos/controllers/user/controllers/helper/authz"
 	"github.com/labring/sealos/controllers/user/controllers/helper/config"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -100,6 +101,9 @@ func testOperationRequestPersistsDesiredRoleBinding(t *testing.T, action userv1.
 			Name:              "change-workspace-owner",
 			Namespace:         config.GetUserSystemNamespace(),
 			CreationTimestamp: metav1.Now(),
+			Annotations: map[string]string{
+				userv1.UserAnnotationCreatorKey: "system:serviceaccount:user-system:workspace",
+			},
 		},
 		Spec: userv1.OperationrequestSpec{
 			Namespace: workspaceNamespace,
@@ -136,6 +140,7 @@ func testOperationRequestPersistsDesiredRoleBinding(t *testing.T, action userv1.
 		Logger:         logr.Discard(),
 		Scheme:         scheme,
 		Recorder:       record.NewFakeRecorder(20),
+		Authorizer:     allowAllAuthorizer{},
 		expirationTime: time.Minute,
 		retentionTime:  time.Minute,
 	}
@@ -183,4 +188,30 @@ func testOperationRequestPersistsDesiredRoleBinding(t *testing.T, action userv1.
 	if updatedRequest.Status.Phase != userv1.RequestCompleted {
 		t.Fatalf("OperationRequest phase = %q, want Completed", updatedRequest.Status.Phase)
 	}
+}
+
+type allowAllAuthorizer struct{}
+
+func (allowAllAuthorizer) CanCreateServiceAccountToken(
+	_ context.Context,
+	_ authz.Identity,
+	_ string,
+) (bool, error) {
+	return true, nil
+}
+
+func (allowAllAuthorizer) CanUpdateUser(
+	_ context.Context,
+	_ authz.Identity,
+	_ string,
+) (bool, error) {
+	return true, nil
+}
+
+func (allowAllAuthorizer) CanDeleteUser(
+	_ context.Context,
+	_ authz.Identity,
+	_ string,
+) (bool, error) {
+	return true, nil
 }
