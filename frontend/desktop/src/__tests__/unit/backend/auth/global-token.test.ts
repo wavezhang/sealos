@@ -13,9 +13,9 @@ describe('verifyGlobalToken', () => {
       desktop: {
         auth: {
           jwt: {
-            global: 'test-global-secret',
-            regional: 'test-regional-secret',
-            internal: 'test-internal-secret'
+            global: 'test-global-secret-0123456789abcdef',
+            regional: 'test-regional-secret-0123456789abcdef',
+            internal: 'test-internal-secret-0123456789abcdef'
           }
         }
       },
@@ -64,7 +64,7 @@ describe('verifyGlobalToken', () => {
         token_type: 'access_token',
         user_id: 'oauth-user-id'
       },
-      'test-global-secret',
+      'test-global-secret-0123456789abcdef',
       { expiresIn: '7d' }
     );
 
@@ -80,7 +80,7 @@ describe('verifyGlobalToken', () => {
         client_id: GLOBAL_TOKEN_CLIENT_ID,
         token_type: 'access_token'
       },
-      'test-global-secret',
+      'test-global-secret-0123456789abcdef',
       { expiresIn: '7d' }
     );
 
