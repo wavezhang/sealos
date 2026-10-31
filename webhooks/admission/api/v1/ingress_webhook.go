@@ -348,21 +348,22 @@ func (v *IngressValidator) checkCname(
 		rule.Host,
 	)
 	ilog.Info("domains:", "domains", strings.Join(v.CnameDomains, ","))
-	// get cname and check if it is cname to domain
-	cname, err := net.DefaultResolver.LookupCNAME(ctx, rule.Host)
-	if err != nil {
-		ilog.Error(err, "can not verify ingress host "+rule.Host+", lookup cname error")
-		return err
+	// An empty domain list means the operator did not configure ownership
+	// checks (for example a chart installed without the entrypoint). Skip
+	// instead of rejecting every ingress.
+	if len(v.CnameDomains) == 0 {
+		ilog.Info("cnameDomains is empty, skip cname ownership check")
+		return nil
 	}
-	// remove last dot and normalize case
-	cname = normalizeFQDN(cname)
 	host := normalizeFQDN(rule.Host)
+	// Hosts inside the cluster's own domains need no DNS lookup: unmatched
+	// hosts are subject to a live CNAME query, which may be unavailable in
+	// air-gapped environments.
 	for _, domain := range v.CnameDomains {
 		d := normalizeFQDN(domain)
 		if d == "" {
 			continue
 		}
-		// check if ingress host is a subdomain of the allowed domain
 		if dns.IsSubDomain(d, host) {
 			ilog.Info(
 				"ingress host is end with "+domain+", skip validate",
@@ -372,6 +373,20 @@ func (v *IngressValidator) checkCname(
 				i.Name,
 			)
 			return nil
+		}
+	}
+	// get cname and check if it is cname to domain
+	cname, err := net.DefaultResolver.LookupCNAME(ctx, rule.Host)
+	if err != nil {
+		ilog.Error(err, "can not verify ingress host "+rule.Host+", lookup cname error")
+		return err
+	}
+	// remove last dot and normalize case
+	cname = normalizeFQDN(cname)
+	for _, domain := range v.CnameDomains {
+		d := normalizeFQDN(domain)
+		if d == "" {
+			continue
 		}
 		// if cname is not a subdomain of the allowed domain, return error
 		if dns.IsSubDomain(d, cname) {

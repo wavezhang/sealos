@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	netv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestIngressValidator_checkHosts(t *testing.T) {
@@ -151,5 +152,25 @@ func TestIngressValidator_checkForbiddenDomainSuffix(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestIngressValidator_checkCnameWithoutConfiguredDomains(t *testing.T) {
+	t.Parallel()
+	v := &IngressValidator{}
+	ingress := &netv1.Ingress{ObjectMeta: metav1.ObjectMeta{Namespace: "ns-alice", Name: "web"}}
+	rule := &netv1.IngressRule{Host: "app.example.com"}
+	if err := v.checkCname(context.Background(), ingress, rule); err != nil {
+		t.Fatalf("unconfigured cnameDomains must not reject ingresses: %v", err)
+	}
+}
+
+func TestIngressValidator_checkCnameAcceptsClusterDomainWithoutDNS(t *testing.T) {
+	t.Parallel()
+	v := &IngressValidator{CnameDomains: []string{"cloud.sealos.io"}}
+	ingress := &netv1.Ingress{ObjectMeta: metav1.ObjectMeta{Namespace: "ns-alice", Name: "web"}}
+	rule := &netv1.IngressRule{Host: "app-ns-alice.cloud.sealos.io"}
+	if err := v.checkCname(context.Background(), ingress, rule); err != nil {
+		t.Fatalf("host inside cnameDomains must pass without a DNS lookup: %v", err)
 	}
 }
