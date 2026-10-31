@@ -396,8 +396,11 @@ func ParseTransferAmountReq(c *gin.Context) (*TransferAmountReq, error) {
 	if err := c.ShouldBindJSON(transferAmount); err != nil {
 		return nil, fmt.Errorf("bind json error: %w", err)
 	}
-	if transferAmount.Amount == 0 && !transferAmount.TransferAll {
-		return nil, errors.New("transfer amount cannot be empty")
+	if transferAmount.TransferAll {
+		// TransferAll ignores the amount; the DAO derives it from the sender balance.
+		transferAmount.Amount = 0
+	} else if transferAmount.Amount <= 0 {
+		return nil, errors.New("transfer amount must be greater than zero")
 	}
 	return transferAmount, nil
 }

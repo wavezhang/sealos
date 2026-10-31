@@ -1,4 +1,5 @@
 import { Config } from '@/config';
+import { postSignedInvoice } from '@/service/backend/invoiceSignature';
 import { makeAPIClient } from '@/service/backend/region';
 import {
   callbackToUpdateBot,
@@ -77,25 +78,31 @@ export default async function handler(req: NextApiRequest, resp: NextApiResponse
       // const url = makeAPIClient(null, '/account/v1alpha1/invoice/set-status');
       const client = await makeAPIClient(null);
       if (!client) return;
-      const setStatusRes = await client.post('/account/v1alpha1/invoice/set-status', {
-        invoiceIDList: [invoiceId],
-        status,
-        token: Config().costCenter.invoice.serviceToken
-      });
+      const setStatusRes = await postSignedInvoice(
+        client,
+        '/account/v1alpha1/internal/invoice/set-status',
+        {
+          invoiceIDList: [invoiceId],
+          status
+        }
+      );
       if (setStatusRes.status !== 200) {
         console.log(setStatusRes.data);
         throw Error('set invoice status error');
       }
 
       // const getUrl = makeAPIClient(null, '/account/v1alpha1/invoice/get');
-      const getInvoiceRes = await client.post('/account/v1alpha1/invoice/get', {
-        token: Config().costCenter.invoice.serviceToken,
-        invoiceID: invoiceId,
-        page: 1,
-        pageSize: 10,
-        startTime: '2023-01-01T00:00:00Z',
-        endTime: new Date()
-      });
+      const getInvoiceRes = await postSignedInvoice(
+        client,
+        '/account/v1alpha1/internal/invoice/get',
+        {
+          invoiceID: invoiceId,
+          page: 1,
+          pageSize: 10,
+          startTime: '2023-01-01T00:00:00Z',
+          endTime: new Date()
+        }
+      );
       const invoiceListData = getInvoiceRes.data as {
         data: InvoiceListData;
       };

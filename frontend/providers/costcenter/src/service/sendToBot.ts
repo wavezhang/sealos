@@ -13,6 +13,7 @@ import * as Util from '@alicloud/tea-util';
 import axios from 'axios';
 import { parseISO } from 'date-fns';
 import { NextApiResponse } from 'next';
+import { postSignedInvoice } from './backend/invoiceSignature';
 import { makeAPIClient } from './backend/region';
 const feishuAxios = axios.create({
   baseURL: 'https://open.feishu.cn/open-apis',
@@ -135,13 +136,12 @@ const generateBotTemplate = ({
 };
 export const getInvoicePayments = async (invoiceID: string): Promise<RechargeBillingItem[]> => {
   try {
-    const token = Config().costCenter.invoice.serviceToken;
-    if (!token) throw Error('token is null');
     const client = await makeAPIClient(null);
-    const res = await client.post(`/account/v1alpha1/invoice/get-payment`, {
-      token,
-      invoiceID
-    });
+    const res = await postSignedInvoice(
+      client,
+      `/account/v1alpha1/internal/invoice/get-payment`,
+      { invoiceID }
+    );
     const result = res.data;
 
     if (res.status !== 200) {

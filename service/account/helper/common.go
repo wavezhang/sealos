@@ -31,10 +31,17 @@ const (
 	ApplyInvoice                  = "/invoice/apply"
 	SetStatusInvoice              = "/invoice/set-status"
 	GetInvoicePayment             = "/invoice/get-payment"
-	UseGiftCode                   = "/gift-code/use"
-	UserUsage                     = "/user-usage"
-	GetRechargeDiscount           = "/recharge-discount"
-	GetUserRealNameInfo           = "/real-name-info"
+
+	// Internal invoice-service routes. They are not part of the user API and
+	// require an HMAC signature instead of a user JWT.
+	InternalInvoiceGroup      = "/internal/invoice"
+	InternalSetStatusInvoice  = "/set-status"
+	InternalGetInvoice        = "/get"
+	InternalGetInvoicePayment = "/get-payment"
+	UseGiftCode               = "/gift-code/use"
+	UserUsage                 = "/user-usage"
+	GetRechargeDiscount       = "/recharge-discount"
+	GetUserRealNameInfo       = "/real-name-info"
 
 	// UserAlertNotificationAccount routes
 	UserAlertNotificationAccountCreate = "/user-alert-notification-account/create"
