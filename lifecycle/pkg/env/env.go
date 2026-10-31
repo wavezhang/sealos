@@ -31,7 +31,7 @@ type Interface interface {
 	// Input shell: cat /etc/hosts
 	// Output shell: DATADISK=/data cat /etc/hosts
 	// So that you can get env values in you shell script
-	WrapShell(host, shell string) string
+	WrapShell(host, shell string) (string, error)
 	// RenderAll :render env to all the files in dir
 	RenderAll(host, dir string, envs map[string]string) error
 	Getenv(host string) map[string]string
@@ -59,7 +59,7 @@ func (p *processor) Getenv(host string) map[string]string {
 	return env
 }
 
-func (p *processor) WrapShell(host, shell string) string {
+func (p *processor) WrapShell(host, shell string) (string, error) {
 	envs := p.getHostEnvInCache(host)
 	return stringsutil.RenderShellWithEnv(shell, envs)
 }

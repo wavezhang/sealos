@@ -28,6 +28,7 @@ import (
 	"github.com/labring/sealos/pkg/constants"
 
 	"github.com/labring/sealos/pkg/utils/iputils"
+	stringsutil "github.com/labring/sealos/pkg/utils/strings"
 )
 
 const (
@@ -48,12 +49,12 @@ type Remote struct {
 }
 
 func (s *Remote) HostsAdd(ip, host, domain string) error {
-	cmd := fmt.Sprintf(addHostsCommandFmt, host, domain)
+	cmd := fmt.Sprintf(addHostsCommandFmt, stringsutil.ShellQuote(host), stringsutil.ShellQuote(domain))
 	return s.executeRemoteUtilSubcommand(ip, cmd)
 }
 
 func (s *Remote) HostsDelete(ip, domain string) error {
-	cmd := fmt.Sprintf(deleteHostsCommandFmt, domain)
+	cmd := fmt.Sprintf(deleteHostsCommandFmt, stringsutil.ShellQuote(domain))
 	return s.executeRemoteUtilSubcommand(ip, cmd)
 }
 
@@ -64,8 +65,8 @@ func (s *Remote) Hostname(ip string) (string, error) {
 func (s *Remote) IPVS(ip, vip string, masters []string) error {
 	ipvsTemplate := `ipvs --vs {{.vip}}  {{range $h := .masters}}--rs  {{$h}} {{end}} --health-path /healthz --health-schem https --run-once`
 	data := map[string]interface{}{
-		"vip":     vip,
-		"masters": masters,
+		"vip":     stringsutil.ShellQuote(vip),
+		"masters": quoteAll(masters),
 	}
 	out, err := template.RenderTemplate("ipvs", ipvsTemplate, data)
 	if err != nil {
@@ -76,7 +77,7 @@ func (s *Remote) IPVS(ip, vip string, masters []string) error {
 func (s *Remote) IPVSClean(ip, vip string) error {
 	ipvsTemplate := `ipvs --vs {{.vip}}  -C`
 	data := map[string]interface{}{
-		"vip": vip,
+		"vip": stringsutil.ShellQuote(vip),
 		"ip":  iputils.GetHostIP(ip),
 	}
 	out, err := template.RenderTemplate("ipvs", ipvsTemplate, data)
@@ -89,12 +90,12 @@ func (s *Remote) IPVSClean(ip, vip string) error {
 func (s *Remote) StaticPod(ip, vip, name, image string, masters []string, path string, options ...string) error {
 	staticPodIPVSTemplate := `static-pod lvscare --path {{.path}} --name {{.name}} --vip {{.vip}} --image {{.image}}  {{range $h := .masters}} --masters  {{$h}} {{end}} {{range $o := .options}} --options  {{$o}} {{end}}`
 	data := map[string]interface{}{
-		"vip":     vip,
-		"image":   image,
-		"masters": masters,
-		"name":    name,
-		"path":    path,
-		"options": options,
+		"vip":     stringsutil.ShellQuote(vip),
+		"image":   stringsutil.ShellQuote(image),
+		"masters": quoteAll(masters),
+		"name":    stringsutil.ShellQuote(name),
+		"path":    stringsutil.ShellQuote(path),
+		"options": quoteAll(options),
 	}
 	out, err := template.RenderTemplate("lvscare", staticPodIPVSTemplate, data)
 	if err != nil {
@@ -105,7 +106,8 @@ func (s *Remote) StaticPod(ip, vip, name, image string, masters []string, path s
 }
 
 func (s *Remote) Token(ip, config, certificateKey string) (string, error) {
-	return s.outputRemoteUtilSubcommand(ip, fmt.Sprintf(tokenCommandFmt, config, certificateKey))
+	return s.outputRemoteUtilSubcommand(ip, fmt.Sprintf(tokenCommandFmt,
+		stringsutil.ShellQuote(config), stringsutil.ShellQuote(certificateKey)))
 }
 
 func (s *Remote) CGroup(ip string) (string, error) {
@@ -122,11 +124,11 @@ func (s *Remote) Cert(ip string, altNames []string, nodeIP, nodeName, serviceCIR
 	{{if .serviceCIDR}} --service-cidr {{.serviceCIDR}}{{end}}{{if .dnsDomain}} --dns-domain {{.dnsDomain}}{{end}} \
 	{{range $h := .altNames}} --alt-names {{$h}} {{end}}`
 	data := map[string]interface{}{
-		"nodeIP":      nodeIP,
-		"nodeName":    nodeName,
-		"serviceCIDR": serviceCIRD,
-		"dnsDomain":   DNSDomain,
-		"altNames":    altNames,
+		"nodeIP":      stringsutil.ShellQuote(nodeIP),
+		"nodeName":    stringsutil.ShellQuote(nodeName),
+		"serviceCIDR": stringsutil.ShellQuote(serviceCIRD),
+		"dnsDomain":   stringsutil.ShellQuote(DNSDomain),
+		"altNames":    quoteAll(altNames),
 	}
 	out, err := template.RenderTemplate("cert", certTemplate, data)
 	if err != nil {
@@ -140,8 +142,18 @@ type initSystem struct {
 	remoter *Remote
 }
 
+// quoteAll shell-quotes every element so template values can never break out
+// of the generated command line.
+func quoteAll(values []string) []string {
+	quoted := make([]string, len(values))
+	for i := range values {
+		quoted[i] = stringsutil.ShellQuote(values[i])
+	}
+	return quoted
+}
+
 func (s *initSystem) ServiceEnable(service string) error {
-	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "enable", service))
+	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "enable", stringsutil.ShellQuote(service)))
 }
 
 func (s *initSystem) EnableCommand(_ string) string {
@@ -149,31 +161,31 @@ func (s *initSystem) EnableCommand(_ string) string {
 }
 
 func (s *initSystem) ServiceStart(service string) error {
-	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "start", service))
+	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "start", stringsutil.ShellQuote(service)))
 }
 
 func (s *initSystem) ServiceStop(service string) error {
-	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "stop", service))
+	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "stop", stringsutil.ShellQuote(service)))
 }
 
 func (s *initSystem) ServiceRestart(service string) error {
-	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "restart", service))
+	return s.remoter.executeRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "restart", stringsutil.ShellQuote(service)))
 }
 
 func (s *initSystem) ServiceExists(service string) bool {
-	out, _ := s.remoter.outputRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "is-exists", service))
+	out, _ := s.remoter.outputRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "is-exists", stringsutil.ShellQuote(service)))
 	result, _ := strconv.ParseBool(out)
 	return result
 }
 
 func (s *initSystem) ServiceIsEnabled(service string) bool {
-	out, _ := s.remoter.outputRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "is-enabled", service))
+	out, _ := s.remoter.outputRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "is-enabled", stringsutil.ShellQuote(service)))
 	result, _ := strconv.ParseBool(out)
 	return result
 }
 
 func (s *initSystem) ServiceIsActive(service string) bool {
-	out, _ := s.remoter.outputRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "is-active", service))
+	out, _ := s.remoter.outputRemoteUtilSubcommand(s.target, fmt.Sprintf(initSystemCommandFmt, "is-active", stringsutil.ShellQuote(service)))
 	result, _ := strconv.ParseBool(out)
 	return result
 }

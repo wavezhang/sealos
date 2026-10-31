@@ -63,7 +63,7 @@ func (k *KubeadmRuntime) imagePull(hostAndPort, version string) error {
 	type Images struct {
 		Images []string `json:"images"`
 	}
-	imageList := fmt.Sprintf("kubeadm config images list --kubernetes-version %s -o json 2>/dev/null", version)
+	imageList := fmt.Sprintf("kubeadm config images list --kubernetes-version %s -o json 2>/dev/null", str2.ShellQuote(version))
 	listJson, err := k.sshCmdToString(hostAndPort, imageList)
 	if err != nil {
 		return fmt.Errorf("get kubeadm images list failed, error: %s", err.Error())
@@ -87,7 +87,7 @@ func (k *KubeadmRuntime) imagePull(hostAndPort, version string) error {
 	logger.Info("start to pull images: %s", strings.Join(newImageList, ", "))
 
 	for _, image := range newImageList {
-		imagePullCmd := fmt.Sprintf("crictl pull %s", image)
+		imagePullCmd := fmt.Sprintf("crictl pull %s", str2.ShellQuote(image))
 		if err := k.sshCmdAsync(hostAndPort, imagePullCmd); err != nil {
 			return fmt.Errorf("pull image %s failed, error: %s", image, err.Error())
 		}

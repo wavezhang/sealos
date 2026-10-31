@@ -166,5 +166,10 @@ func printCommands(name string, env []string, info buildah.BuilderInfo) {
 		cmds = append(cmds, guest.FormalizeWorkingCommand(name, info.Container, v2.ImageType(typeKey), expansion.Expand(info.OCIv1.Config.Cmd[i], mapping)))
 	}
 
-	logger.Info("Shell command: %s", stringsutil.RenderShellWithEnv(strings.Join(cmds, "; "), envs))
+	rendered, err := stringsutil.RenderShellWithEnv(strings.Join(cmds, "; "), envs)
+	if err != nil {
+		logger.Warn("failed to render shell command for %s: %v", name, err)
+		return
+	}
+	logger.Info("Shell command: %s", rendered)
 }

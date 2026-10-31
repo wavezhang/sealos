@@ -37,6 +37,7 @@ import (
 	"github.com/labring/sealos/pkg/utils/file"
 	"github.com/labring/sealos/pkg/utils/logger"
 	"github.com/labring/sealos/pkg/utils/rand"
+	stringsutil "github.com/labring/sealos/pkg/utils/strings"
 	"github.com/labring/sealos/pkg/utils/yaml"
 )
 
@@ -50,9 +51,9 @@ func GenerateToken(config, certificateKey string) (*types.Token, error) {
 			key = certificateKey
 		}
 		token.CertificateKey = key
-		uploadCertTemplate := fmt.Sprintf("kubeadm init phase upload-certs --upload-certs --certificate-key %s", key)
+		uploadCertTemplate := fmt.Sprintf("kubeadm init phase upload-certs --upload-certs --certificate-key %s", stringsutil.ShellQuote(key))
 		if config != "" {
-			uploadCertTemplate = fmt.Sprintf("kubeadm init phase upload-certs --config %s --upload-certs", config)
+			uploadCertTemplate = fmt.Sprintf("kubeadm init phase upload-certs --config %s --upload-certs", stringsutil.ShellQuote(config))
 		}
 		logger.Debug("token uploadCertTemplate cmd: %s", uploadCertTemplate)
 		if _, err := exec.RunBashCmd(uploadCertTemplate); err != nil {
@@ -61,7 +62,7 @@ func GenerateToken(config, certificateKey string) (*types.Token, error) {
 		tokens := ListToken()
 		const tokenTemplate = "kubeadm token create --print-join-command --certificate-key %s --ttl 2h"
 		logger.Debug("token tokenTemplate cmd: %s", tokenTemplate)
-		if _, err := exec.RunBashCmd(fmt.Sprintf(tokenTemplate, key)); err != nil {
+		if _, err := exec.RunBashCmd(fmt.Sprintf(tokenTemplate, stringsutil.ShellQuote(key))); err != nil {
 			return nil, fmt.Errorf("create bootstrap token: %w", err)
 		}
 		afterTokens := ListToken()

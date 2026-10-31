@@ -43,9 +43,11 @@ func (c *Client) wrapCommands(cmds ...string) string {
 		return cmdJoined
 	}
 
-	// Escape single quotes in cmd, fix https://github.com/labring/sealos/issues/4424
-	// e.g. echo 'hello world' -> `sudo -E /bin/bash -c 'echo "hello world"'`
-	cmdEscaped := strings.ReplaceAll(cmdJoined, `'`, `"`)
+	// Escape single quotes so the command can be wrapped in a single-quoted
+	// argument for the root shell: ' becomes '\'' (close, escaped quote,
+	// reopen). Replacing quotes with double quotes is not an escape and would
+	// re-enable $() and backtick expansion as root.
+	cmdEscaped := strings.ReplaceAll(cmdJoined, `'`, `'\''`)
 	return fmt.Sprintf("sudo -E /bin/bash -c '%s'", cmdEscaped)
 }
 

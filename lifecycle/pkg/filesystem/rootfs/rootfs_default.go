@@ -143,7 +143,11 @@ func (f *defaultRootfs) mountRootfs(cluster *v2.Cluster, ipList []string) error 
 			}
 			renderCommand := getRenderCommand(pathResolver.RootFSSealctlPath(), target)
 
-			return execer.CmdAsync(ip, stringsutil.RenderShellWithEnv(renderCommand, envs))
+			renderCommand, err := stringsutil.RenderShellWithEnv(renderCommand, envs)
+			if err != nil {
+				return err
+			}
+			return execer.CmdAsync(ip, renderCommand)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -164,7 +168,11 @@ func (f *defaultRootfs) mountRootfs(cluster *v2.Cluster, ipList []string) error 
 					logger.Warn("failed to sync sealctl to %s: %v", master0, err)
 				}
 				renderCommand := getRenderCommand(pathResolver.RootFSSealctlPath(), targetDir)
-				return execer.CmdAsync(master0, stringsutil.RenderShellWithEnv(renderCommand, mountInfo.Env))
+				renderCommand, err := stringsutil.RenderShellWithEnv(renderCommand, mountInfo.Env)
+				if err != nil {
+					return err
+				}
+				return execer.CmdAsync(master0, renderCommand)
 			}
 			return nil
 		})
@@ -235,9 +243,9 @@ func syncSealctlToRootfs(execer exec.Interface, host, localSealctlPath, remoteSe
 		return err
 	}
 	return execer.CmdAsync(host, fmt.Sprintf("install -m 0755 %s %s && rm -f %s",
-		shellQuote(tmpPath),
-		shellQuote(remoteSealctlPath),
-		shellQuote(tmpPath),
+		stringsutil.ShellQuote(tmpPath),
+		stringsutil.ShellQuote(remoteSealctlPath),
+		stringsutil.ShellQuote(tmpPath),
 	))
 }
 
@@ -247,8 +255,8 @@ func isRemoteSealctlCurrent(execer exec.Interface, host, localSealctlPath, remot
 		return false
 	}
 	output, err := execer.Cmd(host, fmt.Sprintf("if [ -f %s ]; then sha256sum %s | cut -d' ' -f1; fi",
-		shellQuote(remoteSealctlPath),
-		shellQuote(remoteSealctlPath),
+		stringsutil.ShellQuote(remoteSealctlPath),
+		stringsutil.ShellQuote(remoteSealctlPath),
 	))
 	if err != nil {
 		logger.Debug("failed to get remote sealctl digest on host %s: %v", host, err)
@@ -277,14 +285,40 @@ func normalizeArch(arch string) string {
 	}
 }
 
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+// validateRemovalTarget ensures target is a non-empty, non-root path strictly
+// below base after path normalization, so a crafted cluster name cannot turn
+// an rm -rf into a deletion outside the managed roots.
+func validateRemovalTarget(target, base string) error {
+	cleanTarget := filepath.Clean(target)
+	cleanBase := filepath.Clean(base)
+	if cleanTarget == "" || cleanTarget == "." || cleanTarget == string(filepath.Separator) {
+		return fmt.Errorf("refusing to remove unsafe path %q", target)
+	}
+	if cleanBase == "" || cleanBase == "." || cleanBase == string(filepath.Separator) {
+		return fmt.Errorf("invalid removal base path %q", base)
+	}
+	rel, err := filepath.Rel(cleanBase, cleanTarget)
+	if err != nil || rel == "." || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to remove path %q outside %q", target, base)
+	}
+	return nil
 }
 
 func (f *defaultRootfs) unmountRootfs(cluster *v2.Cluster, ipList []string) error {
+	if err := constants.ValidateClusterName(cluster.Name); err != nil {
+		return err
+	}
 	clusterRootfsDir := constants.NewPathResolver(cluster.Name).Root()
-	rmRootfs := fmt.Sprintf("rm -rf %s", clusterRootfsDir)
-	deleteHomeDirCmd := fmt.Sprintf("rm -rf %s", constants.ClusterDir(cluster.Name))
+	clusterDir := constants.ClusterDir(cluster.Name)
+	if err := validateRemovalTarget(clusterRootfsDir, constants.DefaultClusterRootFsDir); err != nil {
+		return err
+	}
+	if err := validateRemovalTarget(clusterDir, constants.DefaultRuntimeRootDir); err != nil {
+		return err
+	}
+	rmRootfs := fmt.Sprintf("rm -rf -- %s", stringsutil.ShellQuote(clusterRootfsDir))
+	deleteHomeDirCmd := fmt.Sprintf("rm -rf -- %s", stringsutil.ShellQuote(clusterDir))
 	eg, _ := errgroup.WithContext(context.Background())
 	sshClient := ssh.NewCacheClientFromCluster(cluster, true)
 	execer, err := exec.New(sshClient)

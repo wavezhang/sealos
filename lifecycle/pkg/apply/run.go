@@ -91,8 +91,11 @@ func withCommonContext(ctx context.Context, cmd *cobra.Command) context.Context 
 }
 
 func (r *ClusterArgs) runArgs(cmd *cobra.Command, args *RunArgs, imageList []string) error {
-	if args.Cluster.ClusterName == "" {
-		return errors.New("cluster name can not be empty")
+	if err := constants.ValidateClusterName(r.cluster.Name); err != nil {
+		return err
+	}
+	if err := constants.ValidateClusterName(args.Cluster.ClusterName); err != nil {
+		return err
 	}
 	// the first run check
 	if r.cluster.CreationTimestamp.IsZero() {

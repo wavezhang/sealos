@@ -16,7 +16,6 @@ package apply
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/labring/sealos/pkg/apply/applydrivers"
 	"github.com/labring/sealos/pkg/clusterfile"
@@ -49,8 +48,8 @@ func NewApplierFromResetArgs(cmd *cobra.Command, args *ResetArgs) (applydrivers.
 }
 
 func (r *ClusterArgs) resetArgs(cmd *cobra.Command, args *ResetArgs) error {
-	if args.ClusterName.ClusterName == "" {
-		return fmt.Errorf("cluster name can not be empty")
+	if err := constants.ValidateClusterName(args.ClusterName.ClusterName); err != nil {
+		return err
 	}
 	override := getSSHFromCommand(cmd)
 	if override != nil {
