@@ -1,0 +1,13 @@
+name: "Sealos fork CodeQL config"
+
+# security-extended adds higher-signal security queries (injection, path traversal,
+# unsafe reflection, etc.) beyond the default suite.
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - docs
+  - CHANGELOG
+  - "**/node_modules"
+  - "**/*.min.js"
+  - "**/testdata"

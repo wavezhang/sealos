@@ -1,0 +1,342 @@
+# Automated security scanning for this sealos fork.
+#
+# Layers:
+#   - gitleaks      : secret detection (full history report + diff gate)
+#   - Trivy         : dependency / IaC / secret scanning (SARIF + HIGH/CRITICAL gate)
+#   - govulncheck   : reachable Go vulnerabilities per module (SARIF + gate)
+#   - CodeQL        : deep data-flow analysis for Go and TypeScript (SARIF)
+#   - dependency-review: blocks PRs that introduce HIGH/CRITICAL dependencies
+#
+# Policy: every job uploads SARIF to the Security > Code scanning tab. Findings at
+# HIGH/CRITICAL (fixed vulnerabilities, detected secrets, reachable Go vulns) fail
+# the run so they actually block merges once branch protection requires this
+# workflow. Full-history secret findings are report-only to avoid re-flagging
+# upstream history that we cannot fix here.
+
+name: Security Scan
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Every Monday 02:00 UTC, so newly disclosed CVEs are picked up without a push.
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26.10"
+  GITLEAKS_VERSION: "8.30.1"
+  GOVULNCHECK_VERSION: "v1.1.4"
+
+jobs:
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSLf --retry 3 --retry-delay 2 \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan full git history (weekly report only)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          gitleaks git --redact --no-banner \
+            --report-format sarif --report-path gitleaks-history.sarif . || true
+
+      - name: Upload full-history SARIF
+        if: always() && hashFiles('gitleaks-history.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gitleaks-history.sarif
+          category: gitleaks-history
+
+      - name: Gate on secrets in new commits
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            # base_ref is a branch name; reject anything that is not ref-safe.
+            [[ "${BASE_REF}" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "Invalid base ref"; exit 1; }
+            git fetch --no-tags origin "${BASE_REF}"
+            RANGE="origin/${BASE_REF}..HEAD"
+          elif ! [[ "${BEFORE_SHA}" =~ ^[0-9a-f]{40}$ ]] || [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="-1"
+          else
+            [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid head sha"; exit 1; }
+            RANGE="${BEFORE_SHA}..${HEAD_SHA}"
+          fi
+          echo "Scanning commit range: ${RANGE}"
+          if gitleaks git --redact --no-banner --log-opts="${RANGE}" \
+              --report-format sarif --report-path gitleaks-diff.sarif .; then
+            echo "No secrets found in ${RANGE}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            count=$(jq '[.runs[].results[]?] | length' gitleaks-diff.sarif 2>/dev/null || echo "?")
+            {
+              echo "### ALERT: gitleaks found ${count} secret(s) in new commits"
+              echo ""
+              echo "Range: \`${RANGE}\`. See the Security > Code scanning tab for details."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Upload changed-commits SARIF
+        if: always() && hashFiles('gitleaks-diff.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gitleaks-diff.sarif
+          category: gitleaks-diff
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gitleaks-sarif
+          path: gitleaks-*.sarif
+          if-no-files-found: ignore
+          retention-days: 30
+
+  dependencies:
+    name: Dependencies & IaC (Trivy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Scan for HIGH/CRITICAL issues (SARIF)
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"
+          ignore-unfixed: false
+          cache: true
+
+      - name: Upload SARIF
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      - name: Gate on fixed HIGH/CRITICAL vulnerabilities and secrets
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          output: trivy-gate.txt
+          exit-code: "1"
+          cache: true
+
+      - name: Upload gate report
+        if: always() && hashFiles('trivy-gate.txt') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-gate-report
+          path: trivy-gate.txt
+          retention-days: 30
+
+  govulncheck:
+    name: Go vulnerabilities (${{ matrix.module }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: lifecycle
+            native_deps: true
+          - module: controllers
+            native_deps: false
+          - module: service
+            native_deps: false
+          - module: webhooks
+            native_deps: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install native build dependencies
+        if: matrix.native_deps
+        run: sudo apt-get update && sudo apt-get install -y libgpgme-dev libbtrfs-dev libdevmapper-dev
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+
+      - name: Run govulncheck (SARIF)
+        id: scan
+        working-directory: ${{ matrix.module }}
+        run: |
+          set +e
+          govulncheck -format sarif ./... > "$GITHUB_WORKSPACE/govulncheck-${{ matrix.module }}.sarif"
+          rc=$?
+          set -e
+          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
+          echo "govulncheck exit code: ${rc}"
+          exit 0
+
+      - name: Upload SARIF
+        if: always() && hashFiles(format('govulncheck-{0}.sarif', matrix.module)) != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: govulncheck-${{ matrix.module }}.sarif
+          category: govulncheck-${{ matrix.module }}
+
+      - name: Gate on reachable vulnerabilities
+        if: steps.scan.outputs.exit_code != '0'
+        run: |
+          {
+            echo "### ALERT: govulncheck reported issues in ${{ matrix.module }} (exit ${{ steps.scan.outputs.exit_code }})"
+            echo ""
+            echo "Run \`govulncheck ./...\` in \`${{ matrix.module }}\` or check the Code scanning tab."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: govulncheck-${{ matrix.module }}
+          path: govulncheck-${{ matrix.module }}.sarif
+          if-no-files-found: ignore
+          retention-days: 30
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build_mode: manual
+          - language: javascript-typescript
+            build_mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install native build dependencies
+        if: matrix.language == 'go'
+        run: sudo apt-get update && sudo apt-get install -y libgpgme-dev libbtrfs-dev libdevmapper-dev
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build_mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Build Go modules
+        if: matrix.language == 'go'
+        run: |
+          set -uo pipefail
+          for dir in lifecycle controllers service webhooks; do
+            echo "::group::go build ./... in ${dir}"
+            ( cd "${dir}" && go build ./... ) || echo "::warning::go build failed in ${dir}; CodeQL analysis for that module may be partial"
+            echo "::endgroup::"
+          done
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  dependency_review:
+    name: Dependency review (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  summary:
+    name: Summary
+    if: always()
+    needs: [secrets, dependencies, govulncheck, codeql, dependency_review]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Write job summary
+        run: |
+          {
+            echo "## Security scan summary"
+            echo ""
+            echo "| Scan | Result |"
+            echo "| --- | --- |"
+            echo "| Secrets (gitleaks) | ${{ needs.secrets.result }} |"
+            echo "| Dependencies & IaC (Trivy) | ${{ needs.dependencies.result }} |"
+            echo "| Go vulnerabilities (govulncheck) | ${{ needs.govulncheck.result }} |"
+            echo "| CodeQL | ${{ needs.codeql.result }} |"
+            echo "| Dependency review | ${{ needs.dependency_review.result }} |"
+            echo ""
+            echo "Details: https://github.com/${{ github.repository }}/security/code-scanning"
+          } >> "$GITHUB_STEP_SUMMARY"
