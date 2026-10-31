@@ -1,6 +1,6 @@
 import { Config } from '@/config';
 import { IncomingHttpHeaders } from 'http';
-import { K8sApi } from '@/service/backend/kubernetes';
+import { K8sApi, sanitizeKubeConfig } from '@/service/backend/kubernetes';
 import * as yaml from 'js-yaml';
 export const authSession = async (header: IncomingHttpHeaders) => {
   try {
@@ -8,7 +8,7 @@ export const authSession = async (header: IncomingHttpHeaders) => {
       return Promise.reject('缺少凭证');
     }
 
-    const kubeconfig = decodeURIComponent(header.authorization);
+    const kubeconfig = sanitizeKubeConfig(decodeURIComponent(header.authorization));
     const kc = K8sApi(kubeconfig);
 
     // rewrite exportConfig to stop transform domain to ip

@@ -22,10 +22,45 @@ export function CheckIsInCluster(): [boolean, string] {
   return [false, ''];
 }
 
+// Fields that make the Kubernetes client execute local processes or read
+// arbitrary files from inside this pod. Caller-supplied kubeconfigs must never
+// be able to use them: `exec` spawns the configured command (credential plugin
+// RCE) and `tokenFile`/`client-*-` paths allow probing the pod filesystem.
+const BLOCKED_KUBECONFIG_USER_FIELDS = [
+  'exec',
+  'auth-provider',
+  'tokenFile',
+  'client-certificate',
+  'client-key'
+] as const;
+
+/**
+ * Remove credential plugins and file references from a kubeconfig string.
+ * Token and inline certificate data stay usable, so legitimate callers are
+ * unaffected.
+ */
+export function sanitizeKubeConfig(config: string): string {
+  const doc = yaml.load(config) as any;
+  if (!doc || typeof doc !== 'object') {
+    throw new Error('invalid kubeconfig');
+  }
+  if (Array.isArray(doc.users)) {
+    doc.users = doc.users.map((entry: any) => {
+      if (entry && typeof entry === 'object' && entry.user && typeof entry.user === 'object') {
+        for (const field of BLOCKED_KUBECONFIG_USER_FIELDS) {
+          delete entry.user[field];
+        }
+      }
+      return entry;
+    });
+  }
+  return yaml.dump(doc);
+}
+
 /* init api */
 export function K8sApi(config: string): k8s.KubeConfig {
   const kc = new k8s.KubeConfig();
-  kc.loadFromString(config);
+  kc.loadFromString(sanitizeKubeConfig(config));
 
   const cluster = kc.getCurrentCluster();
 
