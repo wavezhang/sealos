@@ -24,9 +24,8 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/labring/sealos/pkg/utils/logger"
+	"golang.org/x/sync/errgroup"
 )
 
 func (c *Client) Ping(host string) error {
@@ -189,7 +188,10 @@ func (c *Client) handlePipe(host string, pipe io.Reader, out io.Writer, isStdout
 	r := bufio.NewReader(pipe)
 	writers := []io.Writer{out}
 	if isStdout {
-		writers = append(writers, &withPrefixWriter{prefix: host + "\t", newline: true, w: os.Stdout})
+		writers = append(
+			writers,
+			&withPrefixWriter{prefix: host + "\t", newline: true, w: os.Stdout},
+		)
 	}
 	w := io.MultiWriter(writers...)
 	var line []byte

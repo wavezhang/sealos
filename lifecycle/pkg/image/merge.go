@@ -24,10 +24,9 @@ import (
 	"strings"
 	"text/template"
 
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-
 	"github.com/labring/sealos/pkg/types/v1beta1"
 	"github.com/labring/sealos/pkg/utils/maps"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 var (
@@ -88,7 +87,11 @@ func MergeDockerfileFromImages(imageObjList []map[string]v1.Image) (string, erro
 			labels = maps.Merge(labels, val.Config.Labels)
 
 			if val.Config.Labels != nil {
-				if key := maps.GetFromKeys(val.Config.Labels, v1beta1.ImageTypeKeys...); key == string(v1beta1.RootfsImage) {
+				if key := maps.GetFromKeys(
+					val.Config.Labels,
+					v1beta1.ImageTypeKeys...); key == string(
+					v1beta1.RootfsImage,
+				) {
 					isRootfs = true
 				}
 			}
@@ -155,7 +158,8 @@ CMD [{{ .CMDs }}]
 {{- range .Images }}
 COPY --from={{.}}   . .
 {{- end }}
-{{- end }}`)
+{{- end }}`,
+	)
 	if err != nil {
 		return "", err
 	}

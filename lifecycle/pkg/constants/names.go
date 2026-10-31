@@ -17,6 +17,7 @@ limitations under the License.
 package constants
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 )
@@ -29,7 +30,7 @@ var clusterNameRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 // ValidateClusterName rejects empty or unsafe cluster names.
 func ValidateClusterName(name string) error {
 	if name == "" {
-		return fmt.Errorf("cluster name cannot be empty")
+		return errors.New("cluster name cannot be empty")
 	}
 	if !clusterNameRe.MatchString(name) {
 		return fmt.Errorf("invalid cluster name %q: must match %s", name, clusterNameRe.String())

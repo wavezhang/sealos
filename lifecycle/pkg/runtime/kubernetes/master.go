@@ -20,19 +20,15 @@ import (
 	"path"
 	"strings"
 
-	"github.com/labring/sealos/pkg/utils/iputils"
-
-	"github.com/labring/sealos/pkg/sreg/registry/crane"
-	"k8s.io/apimachinery/pkg/util/json"
-
 	"github.com/labring/sealos/pkg/registry/helpers"
-
+	"github.com/labring/sealos/pkg/sreg/registry/crane"
 	"github.com/labring/sealos/pkg/ssh"
 	"github.com/labring/sealos/pkg/utils/file"
+	"github.com/labring/sealos/pkg/utils/iputils"
 	"github.com/labring/sealos/pkg/utils/logger"
 	str2 "github.com/labring/sealos/pkg/utils/strings"
-
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/util/json"
 )
 
 func (k *KubeadmRuntime) InitMaster0() error {
@@ -43,7 +39,10 @@ func (k *KubeadmRuntime) InitMaster0() error {
 	}
 	cmdInit := k.Command(InitMaster)
 	if cmdInit == "" {
-		return fmt.Errorf("get init master command failed, kubernetes version is %s", k.getKubeVersion())
+		return fmt.Errorf(
+			"get init master command failed, kubernetes version is %s",
+			k.getKubeVersion(),
+		)
 	}
 	err := k.sshCmdAsync(master0, cmdInit)
 	if err != nil {
@@ -56,21 +55,37 @@ func (k *KubeadmRuntime) imagePull(hostAndPort, version string) error {
 	if version == "" {
 		version = k.getKubeVersion()
 	}
-	registry := helpers.GetRegistryInfo(k.execer, k.pathResolver.RootFSPath(), k.cluster.GetRegistryIPAndPort())
-	if err := helpers.WaitRegistryReady(k.execer, hostAndPort, registry.Domain, registry.Port); err != nil {
+	registry := helpers.GetRegistryInfo(
+		k.execer,
+		k.pathResolver.RootFSPath(),
+		k.cluster.GetRegistryIPAndPort(),
+	)
+	if err := helpers.WaitRegistryReady(
+		k.execer,
+		hostAndPort,
+		registry.Domain,
+		registry.Port,
+	); err != nil {
 		return err
 	}
 	type Images struct {
 		Images []string `json:"images"`
 	}
-	imageList := fmt.Sprintf("kubeadm config images list --kubernetes-version %s -o json 2>/dev/null", str2.ShellQuote(version))
+	imageList := fmt.Sprintf(
+		"kubeadm config images list --kubernetes-version %s -o json 2>/dev/null",
+		str2.ShellQuote(version),
+	)
 	listJson, err := k.sshCmdToString(hostAndPort, imageList)
 	if err != nil {
 		return fmt.Errorf("get kubeadm images list failed, error: %s", err.Error())
 	}
 	var images Images
 	if err = json.Unmarshal([]byte(listJson), &images); err != nil {
-		return fmt.Errorf("unmarshal kubeadm images list failed, json: %s, error: %s", listJson, err.Error())
+		return fmt.Errorf(
+			"unmarshal kubeadm images list failed, json: %s, error: %s",
+			listJson,
+			err.Error(),
+		)
 	}
 	var newImageList []string
 	for _, image := range images.Images {
@@ -80,7 +95,12 @@ func (k *KubeadmRuntime) imagePull(hostAndPort, version string) error {
 		}
 		regAddr := crane.GetRegistryDomain(image)
 		if regAddr != "" {
-			image = strings.Replace(image, regAddr, fmt.Sprintf("%s:%s", registry.Domain, registry.Port), 1)
+			image = strings.Replace(
+				image,
+				regAddr,
+				registry.Domain+":"+registry.Port,
+				1,
+			)
 			newImageList = append(newImageList, image)
 		}
 	}
@@ -117,7 +137,11 @@ func (k *KubeadmRuntime) ConfigJoinMasterKubeadmToMaster(master string) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate join master kubeadm config: %s", err.Error())
 	}
-	joinConfigPath := path.Join(k.pathResolver.TmpPath(), iputils.GetHostIP(master), defaultJoinMasterKubeadmFileName)
+	joinConfigPath := path.Join(
+		k.pathResolver.TmpPath(),
+		iputils.GetHostIP(master),
+		defaultJoinMasterKubeadmFileName,
+	)
 	outConfigPath := path.Join(k.pathResolver.ConfigsPath(), defaultJoinMasterKubeadmFileName)
 	err = file.WriteFile(joinConfigPath, data)
 	if err != nil {
@@ -157,7 +181,10 @@ func (k *KubeadmRuntime) joinMasters(masters []string) error {
 	}
 	joinCmd := k.Command(JoinMaster)
 	if joinCmd == "" {
-		return fmt.Errorf("get join master command failed, kubernetes version is %s", k.getKubeVersion())
+		return fmt.Errorf(
+			"get join master command failed, kubernetes version is %s",
+			k.getKubeVersion(),
+		)
 	}
 	for _, master := range masters {
 		logger.Info("start to join %s as master", master)
@@ -206,7 +233,7 @@ func (k *KubeadmRuntime) deleteMasters(masters []string) error {
 
 func (k *KubeadmRuntime) deleteMaster(master string) error {
 	return k.resetNode(master, func() {
-		//remove master
+		// remove master
 		masterIPs := str2.RemoveFromSlice(k.getMasterIPList(), master)
 		if len(masterIPs) > 0 {
 			// TODO: do we need draining first?

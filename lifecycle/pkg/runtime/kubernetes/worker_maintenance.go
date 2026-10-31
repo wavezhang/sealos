@@ -166,7 +166,11 @@ func (k *KubeadmRuntime) resetWorker(host string) error {
 	}
 	if err := k.sshCmdAsync(
 		host,
-		fmt.Sprintf(remoteCleanMasterOrNode, vlogToStr(k.klogLevel), stringsutil.ShellQuote(k.getEtcdDataDir())),
+		fmt.Sprintf(
+			remoteCleanMasterOrNode,
+			vlogToStr(k.klogLevel),
+			stringsutil.ShellQuote(k.getEtcdDataDir()),
+		),
 	); err != nil {
 		return err
 	}

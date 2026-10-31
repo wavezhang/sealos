@@ -21,9 +21,6 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/spf13/cobra"
-	"golang.org/x/exp/slices"
-
 	"github.com/labring/sealos/pkg/apply/applydrivers"
 	"github.com/labring/sealos/pkg/apply/processor"
 	"github.com/labring/sealos/pkg/clusterfile"
@@ -35,6 +32,8 @@ import (
 	"github.com/labring/sealos/pkg/utils/logger"
 	"github.com/labring/sealos/pkg/utils/maps"
 	stringsutil "github.com/labring/sealos/pkg/utils/strings"
+	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
 
 type ClusterArgs struct {
@@ -43,7 +42,11 @@ type ClusterArgs struct {
 	clusterName string
 }
 
-func NewApplierFromArgs(cmd *cobra.Command, args *RunArgs, imageName []string) (applydrivers.Interface, error) {
+func NewApplierFromArgs(
+	cmd *cobra.Command,
+	args *RunArgs,
+	imageName []string,
+) (applydrivers.Interface, error) {
 	clusterPath := constants.Clusterfile(args.ClusterName)
 	cf := clusterfile.NewClusterFile(clusterPath,
 		clusterfile.WithCustomConfigFiles(args.CustomConfigFiles),
@@ -91,10 +94,7 @@ func withCommonContext(ctx context.Context, cmd *cobra.Command) context.Context 
 }
 
 func (r *ClusterArgs) runArgs(cmd *cobra.Command, args *RunArgs, imageList []string) error {
-	if err := constants.ValidateClusterName(r.cluster.Name); err != nil {
-		return err
-	}
-	if err := constants.ValidateClusterName(args.Cluster.ClusterName); err != nil {
+	if err := constants.ValidateClusterName(args.ClusterName); err != nil {
 		return err
 	}
 	// the first run check
@@ -147,7 +147,7 @@ func (r *ClusterArgs) runArgs(cmd *cobra.Command, args *RunArgs, imageList []str
 	return nil
 }
 
-func (r *ClusterArgs) setHostWithIpsPort(ips []string, roles []string) {
+func (r *ClusterArgs) setHostWithIpsPort(ips, roles []string) {
 	defaultPort := defaultSSHPort(r.cluster.Spec.SSH.Port)
 	hostMap := map[string]*v2.Host{}
 	for i := range ips {

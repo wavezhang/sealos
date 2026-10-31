@@ -28,10 +28,8 @@ import (
 	"github.com/labring/sealos/pkg/constants"
 	"github.com/labring/sealos/pkg/template"
 	"github.com/labring/sealos/pkg/utils/file"
-
-	"golang.org/x/exp/slices"
-
 	"github.com/labring/sealos/pkg/utils/logger"
+	"golang.org/x/exp/slices"
 )
 
 func NotInIPList(slice []string, key string) bool {
@@ -63,7 +61,7 @@ func FilterNonEmptyFromSlice(list []string) (ret []string) {
 			ret = append(ret, list[i])
 		}
 	}
-	return
+	return ret
 }
 
 func FilterNonEmptyFromString(s, sep string) []string {
@@ -101,7 +99,7 @@ func RemoveFromSlice(ss []string, s string) (result []string) {
 			result = append(result, v)
 		}
 	}
-	return
+	return result
 }
 
 func Merge(ss []string, s string) []string {
@@ -125,7 +123,7 @@ func FormatSize(size int64) (Size string) {
 	} else {
 		Size = fmt.Sprintf("%.2fGB", float64(size)/float64(1024*1024*1024))
 	}
-	return
+	return Size
 }
 
 func IsLetterOrNumber(k string) bool {
