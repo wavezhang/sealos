@@ -1,6 +1,6 @@
 import { useConfigStore } from '@/stores/config';
 import { theme } from '@/styles/chakraTheme';
-import { getCookie } from '@/utils/cookieUtils';
+import { getCookie, migrateLegacySharedAuthCookie } from '@/utils/cookieUtils';
 import { ChakraProvider } from '@chakra-ui/react';
 import { Hydrate, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { appWithTranslation, useTranslation } from 'next-i18next';
@@ -57,6 +57,7 @@ const App = ({ Component, pageProps }: AppProps) => {
   }, [router.query, joinDiscordPromptStore, autolaunch, currentAppKey]);
 
   useEffect(() => {
+    migrateLegacySharedAuthCookie();
     initAppConfig();
   }, []);
 

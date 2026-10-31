@@ -43,7 +43,7 @@ export function AuthModifyList({
         proxyAddress?: string;
       }) =>
       (action: T) => {
-        const state = generateState(action);
+        const state = generateState(action, undefined, provider);
         setProvider(provider);
         if (proxyAddress) {
           const target = new URL(proxyAddress);

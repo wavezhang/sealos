@@ -9,6 +9,32 @@ import { clearWebAnalyticsIdentity } from '@/utils/app-visitor-link';
 
 export type OauthAction = 'LOGIN' | 'BIND' | 'UNBIND' | 'PROXY';
 
+const OAUTH_STATE_STORAGE_PREFIX = 'sealos_oauth_state:';
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+type StoredOauthState = {
+  state: string;
+  action: OauthAction;
+  provider?: OauthProvider;
+  domainState?: string;
+  createdAt: number;
+};
+
+export type ComparedOauthState = {
+  action: string;
+  statePayload: string[];
+  provider?: OauthProvider;
+};
+
+// CSPRNG nonce. `randomUUID` requires a secure context, so fall back to
+// getRandomValues (available on plain HTTP too).
+const createOauthState = (): string => {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+};
+
 type SessionState = {
   session?: Session; // session.token is app token
   token: string; // region token (used for API requests)
@@ -23,11 +49,8 @@ type SessionState = {
   setHasEverLoggedIn: (value: boolean) => void;
   isUserLogin: () => boolean;
 
-  generateState: (action?: OauthAction, domainState?: string) => string;
-  compareState: (state: string) => {
-    action: string;
-    statePayload: string[];
-  };
+  generateState: (action?: OauthAction, domainState?: string, provider?: OauthProvider) => string;
+  compareState: (state: string) => ComparedOauthState | null;
   lastSigninProvier?: string;
   setLastSigninProvider: (provider?: string) => void;
   setProvider: (provider?: OauthProvider) => void;
@@ -89,23 +112,45 @@ const useSessionStore = create<SessionState>()(
         if (state.session?.isGuest) return false;
         return !!state.session?.user;
       },
-      // [LOGIN/UNBIND/BIND]_STATE
-      // PROXY_DOMAINSTATE, DOMAINSTATE = URL_[LOGIN/UNBIND/BIND]_STATE
-      generateState: (action = 'LOGIN', domainState) => {
-        let state = action as string;
-        if (domainState && action === 'PROXY') {
-          state = state + '_' + domainState;
-        } else {
-          state = state + '_' + new Date().getTime().toString();
+      // The OAuth state is a CSPRNG nonce; the action/provider are kept in
+      // sessionStorage and never read from the callback URL.
+      generateState: (action = 'LOGIN', domainState, provider) => {
+        const state = createOauthState();
+        if (typeof window !== 'undefined') {
+          const record: StoredOauthState = {
+            state,
+            action,
+            provider,
+            domainState,
+            createdAt: Date.now()
+          };
+          window.sessionStorage.setItem(
+            `${OAUTH_STATE_STORAGE_PREFIX}${state}`,
+            JSON.stringify(record)
+          );
         }
         return state;
       },
       compareState: (state: string) => {
-        const [action, ...statePayload] = state.split('_');
-        return {
-          action,
-          statePayload
-        };
+        if (typeof window === 'undefined' || !state) return null;
+        const key = `${OAUTH_STATE_STORAGE_PREFIX}${state}`;
+        const raw = window.sessionStorage.getItem(key);
+        if (!raw) return null;
+        // Consume the record before validating so a replayed state can never
+        // be accepted twice, even if validation fails below.
+        window.sessionStorage.removeItem(key);
+        try {
+          const record = JSON.parse(raw) as StoredOauthState;
+          if (record.state !== state) return null;
+          if (Date.now() - record.createdAt > OAUTH_STATE_TTL_MS) return null;
+          return {
+            action: record.action,
+            statePayload: record.domainState ? record.domainState.split('_') : [],
+            provider: record.provider
+          };
+        } catch {
+          return null;
+        }
       },
       setProvider: (provider?: OauthProvider) => {
         set({ provider });

@@ -56,7 +56,7 @@ export default function SigninComponent({ isModal = false, notice }: SigninCompo
       return;
     }
 
-    const state = generateState();
+    const state = generateState('LOGIN', undefined, provider);
     setProvider(provider);
 
     const oauthLogin = async ({ url }: { url: string }) => {
