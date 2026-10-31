@@ -74,16 +74,40 @@ func TestVerifyInvoiceSignature(t *testing.T) {
 
 	t.Run("replayed nonce", func(t *testing.T) {
 		cache := NewInvoiceNonceCache()
-		if err := VerifyInvoiceSignature(secret, timestamp, nonce, signature, body, now, cache); err != nil {
+		if err := VerifyInvoiceSignature(
+			secret,
+			timestamp,
+			nonce,
+			signature,
+			body,
+			now,
+			cache,
+		); err != nil {
 			t.Fatalf("first request should verify: %v", err)
 		}
-		if err := VerifyInvoiceSignature(secret, timestamp, nonce, signature, body, now, cache); err == nil {
+		if err := VerifyInvoiceSignature(
+			secret,
+			timestamp,
+			nonce,
+			signature,
+			body,
+			now,
+			cache,
+		); err == nil {
 			t.Fatal("expected a replayed nonce to be rejected")
 		}
 	})
 
 	t.Run("missing secret", func(t *testing.T) {
-		if err := VerifyInvoiceSignature("", timestamp, nonce, signature, body, now, NewInvoiceNonceCache()); err == nil {
+		if err := VerifyInvoiceSignature(
+			"",
+			timestamp,
+			nonce,
+			signature,
+			body,
+			now,
+			NewInvoiceNonceCache(),
+		); err == nil {
 			t.Fatal("expected an empty secret to be rejected")
 		}
 	})

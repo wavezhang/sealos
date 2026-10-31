@@ -21,7 +21,12 @@ func TestBalanceDebit(t *testing.T) {
 		{name: "refund deduction", add: false, amount: 100, wantDebit: 100, wantDeduct: true},
 		{name: "top up", add: true, amount: 100},
 		{name: "negative amount with add=false is a top up", add: false, amount: -100},
-		{name: "deduction balance is not the cash balance", isDeduction: true, add: true, amount: 100},
+		{
+			name:        "deduction balance is not the cash balance",
+			isDeduction: true,
+			add:         true,
+			amount:      100,
+		},
 		{name: "zero amount", add: true, amount: 0},
 	}
 	for _, tc := range cases {
