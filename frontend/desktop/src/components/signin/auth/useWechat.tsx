@@ -59,8 +59,7 @@ export default function useWechat() {
             userRestrictedLevel: infoData.data?.info.userRestrictedLevel || undefined,
             enterpriseRealName: infoData.data?.info.enterpriseRealName || undefined
           },
-          // @ts-ignore
-          kubeconfig: result.data.kubeconfig
+          kubeconfig: data.data.kubeconfig
         });
         return router.replace('/');
       }

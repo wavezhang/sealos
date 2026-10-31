@@ -84,9 +84,12 @@ export const getWechatQR = () =>
   );
 
 export const getWechatResult = (payload: { code: string }) =>
-  request.get<any, ApiResp<{ token: string }>>('/api/auth/publicWechat/getWechatResult', {
-    params: payload
-  });
+  request.get<any, ApiResp<{ token: string; kubeconfig: string }>>(
+    '/api/auth/publicWechat/getWechatResult',
+    {
+      params: payload
+    }
+  );
 
 export const getGlobalNotification = () => {
   return request.get<any, ApiResp<TNotification[]>>('/api/notification/global');

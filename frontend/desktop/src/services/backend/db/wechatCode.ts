@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'crypto';
 import { connectToDatabase } from './mongodb';
 
 type TWechatVerifyCode = {
@@ -7,10 +8,72 @@ type TWechatVerifyCode = {
   expireTime: Date;
 };
 
+// The login ticket is delivered to the initiating browser only (HttpOnly) and
+// is stored hashed, so a leaked database row cannot be replayed as a ticket.
+type TWechatLoginTicket = {
+  code: string;
+  ticketHash: string;
+  createdAt: Date;
+  expireAt: Date;
+};
+
+export const WECHAT_LOGIN_TICKET_COOKIE = 'sealos_wechat_login_ticket';
+export const WECHAT_LOGIN_TICKET_TTL_MS = 2 * 60 * 1000;
+
 async function connectToUserCollection() {
   const client = await connectToDatabase();
   const collection = client.db().collection<TWechatVerifyCode>('wechat-verify-code');
   return collection;
+}
+
+async function connectToLoginTicketCollection() {
+  const client = await connectToDatabase();
+  const collection = client.db().collection<TWechatLoginTicket>('wechat-login-ticket');
+  await collection.createIndex({ code: 1 }, { unique: true });
+  await collection.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+  return collection;
+}
+
+const hashTicket = (ticket: string) => createHash('sha256').update(ticket).digest('hex');
+
+/**
+ * Issues a random login ticket bound to the QR scene code. The raw ticket is
+ * returned to the caller exactly once (for the HttpOnly cookie).
+ */
+export async function createWechatLoginTicket(code: string) {
+  const ticket = randomBytes(32).toString('base64url');
+  const now = new Date();
+  const tickets = await connectToLoginTicketCollection();
+  await tickets.insertOne({
+    code,
+    ticketHash: hashTicket(ticket),
+    createdAt: now,
+    expireAt: new Date(now.getTime() + WECHAT_LOGIN_TICKET_TTL_MS)
+  });
+  return ticket;
+}
+
+export async function findWechatLoginTicket({ code, ticket }: { code: string; ticket: string }) {
+  const tickets = await connectToLoginTicketCollection();
+  return tickets.findOne({
+    code,
+    ticketHash: hashTicket(ticket),
+    expireAt: { $gt: new Date() }
+  });
+}
+
+/**
+ * Atomically consumes the login ticket. Returns null when the ticket does not
+ * match the code or was already used.
+ */
+export async function consumeWechatLoginTicket({ code, ticket }: { code: string; ticket: string }) {
+  const tickets = await connectToLoginTicketCollection();
+  const result = await tickets.findOneAndDelete({
+    code,
+    ticketHash: hashTicket(ticket),
+    expireAt: { $gt: new Date() }
+  });
+  return result.value;
 }
 
 export async function addOrUpdateWechatCode({ openid, code }: { openid: string; code: string }) {
@@ -42,6 +105,18 @@ export async function verifyWechatCode({ code }: { code: string }) {
     expireTime: { $gt: new Date() }
   });
   return result;
+}
+
+/**
+ * Atomically consumes a scanned WeChat code so it can be exchanged only once.
+ */
+export async function consumeWechatCode({ code }: { code: string }) {
+  const codes = await connectToUserCollection();
+  const result = await codes.findOneAndDelete({
+    code,
+    expireTime: { $gt: new Date() }
+  });
+  return result.value;
 }
 
 export async function hasWeChatAppSecret() {
