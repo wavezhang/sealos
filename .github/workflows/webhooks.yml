@@ -69,7 +69,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Resolve Modules
         id: set-matrix
@@ -84,10 +84,10 @@ jobs:
       matrix: ${{ fromJson(needs.resolve-modules.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Golang with cache
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -96,7 +96,7 @@ jobs:
           sudo apt update && sudo apt install -y libgpgme-dev libbtrfs-dev libdevmapper-dev
 
       - name: Run Linter
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
         with:
           version: v2.12.2
           working-directory: ${{ matrix.workdir }}
@@ -112,10 +112,10 @@ jobs:
       matrix: ${{ fromJson(needs.resolve-modules.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Golang with cache
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -143,13 +143,13 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Golang with cache
         if: ${{ matrix.module == 'admission' }}
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -173,12 +173,12 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
           driver-opts: network=host
 
       - name: Login to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: ${{ (github.event_name == 'push') ||(github.event_name == 'create') || (inputs.push_image == true)  }}
         with:
           registry: ghcr.io
@@ -187,7 +187,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Aliyun Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: ${{ ((github.event_name == 'push') ||(github.event_name == 'create') || (inputs.push_image == true)) && env.ALIYUN_REGISTRY }}
         with:
           registry: ${{ env.ALIYUN_REGISTRY }}
@@ -196,7 +196,7 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
             ${{ env.GHCR_REPO }}
@@ -212,7 +212,7 @@ jobs:
 
       - name: build (and publish) ${{ matrix.module }} main image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./webhooks/${{ matrix.module }}
           file: ./webhooks/${{ matrix.module }}/Dockerfile
@@ -230,7 +230,7 @@ jobs:
 
       - name: Upload digest
         if: ${{ (github.event_name == 'push') || (github.event_name == 'create') || (inputs.push_image == true) }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: webhook-digests-${{ matrix.module }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -248,7 +248,7 @@ jobs:
       matrix:
         module: [admission, stargz]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set image repo
         env:
           REPO_OWNER: ${{ github.repository_owner }}
@@ -259,26 +259,26 @@ jobs:
             echo "ALIYUN_REPO=${{ env.ALIYUN_REPO_PREFIX }}/sealos-${MODULE_NAME}-webhook" >> "$GITHUB_ENV"
           fi
       - name: Login to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Login to Aliyun Registry
         if: ${{ env.ALIYUN_REGISTRY }}
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.ALIYUN_REGISTRY }}
           username: ${{ secrets.ALIYUN_USERNAME }}
           password: ${{ secrets.ALIYUN_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: webhook-digests-${{ matrix.module }}-*
           path: ${{ runner.temp }}/digests
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Docker meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
             ${{ env.GHCR_REPO }}
@@ -329,7 +329,7 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -349,7 +349,7 @@ jobs:
 
       - name: Docker meta for cluster image
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
             ${{ env.GHCR_CLUSTER_REPO }}
@@ -431,7 +431,7 @@ jobs:
       matrix:
         module: [admission, stargz]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set image repo
         env:
           REPO_OWNER: ${{ github.repository_owner }}
@@ -442,7 +442,7 @@ jobs:
             echo "ALIYUN_CLUSTER_REPO=${{ env.ALIYUN_REPO_PREFIX }}/sealos-cloud-${MODULE_NAME}-webhook" >> "$GITHUB_ENV"
           fi
       - name: Docker meta for cluster image
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
             ${{ env.GHCR_CLUSTER_REPO }}

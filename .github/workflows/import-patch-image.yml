@@ -33,9 +33,9 @@ jobs:
     steps:
       - name: Checkout
         if: ${{ (inputs.target_pull == false) }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout by Pull Request Target
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: ${{ (inputs.target_pull == true) }}
         with:
           ref: ${{ github.event.pull_request.head.ref }}
@@ -53,9 +53,9 @@ jobs:
     steps:
       - name: Checkout
         if: ${{ (inputs.target_pull == false) }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout by Pull Request Target
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: ${{ (inputs.target_pull == true) }}
         with:
           ref: ${{ github.event.pull_request.head.ref }}
@@ -74,17 +74,17 @@ jobs:
     steps:
       - name: Checkout
         if: ${{ (inputs.target_pull == false) }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: Checkout by Pull Request Target
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: ${{ (inputs.target_pull == true) }}
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
       - name: Setup Golang with cache
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -105,7 +105,7 @@ jobs:
           cd "${PROJECT_PATH}" && make build BINS="${MATRIX_BINARY}" PLATFORM="linux_${MATRIX_ARCH}"
 
       - name: Save Binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.binary }}-${{ matrix.arch }}
           path: ${{ env.PROJECT_PATH }}/bin/linux_${{ matrix.arch}}/${{ matrix.binary }}
@@ -115,17 +115,17 @@ jobs:
     steps:
       - name: Checkout
         if: ${{ (inputs.target_pull == false) }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: Checkout by Pull Request Target
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: ${{ (inputs.target_pull == true) }}
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
       - name: Setup Golang with cache
-        uses: magnetikonline/action-golang-cache@v5
+        uses: magnetikonline/action-golang-cache@fcca93e25c7fe3943de4d40c22d255d17f63e63b # v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Install Dependencies
@@ -137,7 +137,7 @@ jobs:
           cd "${PROJECT_PATH}" && go install github.com/onsi/ginkgo/v2/ginkgo
           cd test/e2e && ginkgo build .
       - name: Save E2e Test
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e.test
           path: ${{ env.PROJECT_PATH }}/test/e2e/e2e.test
@@ -155,42 +155,42 @@ jobs:
     steps:
       - name: Checkout
         if: ${{ (inputs.target_pull == false) }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout by Pull Request Target
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: ${{ (inputs.target_pull == true) }}
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
       - name: Expose git commit data
-        uses: rlespinasse/git-commit-data-action@v1
+        uses: rlespinasse/git-commit-data-action@2b76766acf9574c24b5cec7608be8db5dc17968e # v1
 
       - name: Download lvscare
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: lvscare-${{ matrix.arch }}
           path: ${{ env.PROJECT_PATH }}/docker/lvscare
 
       - name: Download sealctl
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sealctl-${{ matrix.arch }}
           path: ${{ env.PROJECT_PATH }}/docker/patch
 
       - name: Download image-cri-shim
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: image-cri-shim-${{ matrix.arch }}
           path: ${{ env.PROJECT_PATH }}/docker/patch
 
       - name: Download sealos
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sealos-${{ matrix.arch }}
           path: ${{ env.PROJECT_PATH }}/docker/sealos
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
           driver-opts: network=host
 
@@ -203,7 +203,7 @@ jobs:
           chmod a+x "${PROJECT_PATH}/docker/lvscare"/*
 
       - name: Build and Push lvscare Image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ env.PROJECT_PATH }}/docker/lvscare
           file: ${{ env.PROJECT_PATH }}/docker/lvscare/Dockerfile.main
@@ -221,13 +221,13 @@ jobs:
           "${PROJECT_PATH}/docker/patch/save-cluster-images.sh"
 
       - name: Upload Cluster Images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: patch-image-${{ matrix.arch }}.tar
           path: patch-${{ matrix.arch }}.tar
 
       - name: Delete Artifacts
-        uses: geekyeggo/delete-artifact@v1
+        uses: geekyeggo/delete-artifact@b73cb986740e466292a536d0e32e2666c56fdeb3 # v1
         with:
           name: |
             lvscare-${{ matrix.arch }}

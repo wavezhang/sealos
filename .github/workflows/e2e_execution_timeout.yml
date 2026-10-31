@@ -45,25 +45,25 @@ jobs:
           ]
     steps:
       - name: Download image-cri-shim
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: image-cri-shim-amd64
           path: /tmp/
 
       - name: Download sealctl
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sealctl-amd64
           path: /tmp/
 
       - name: Download sealos
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sealos-amd64
           path: /tmp/
 
       - name: Download e2e test
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: e2e.test
           path: /tmp/
@@ -75,7 +75,7 @@ jobs:
           sudo sealos version
 
       - name: Remove containerd & docker
-        uses: labring/sealos-action@v0.0.7
+        uses: labring/sealos-action@f1ee48d5766578214b1b8e5b5294dcec860368ed # v0.0.7
         with:
           type: prune
 
@@ -95,7 +95,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-results-${{ matrix.unit }}
           path: |

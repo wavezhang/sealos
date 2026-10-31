@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Run GitHub File Sync
         # Can update to v1 when https://github.com/BetaHuhn/repo-file-sync-action/issues/168 is resolved
-        uses: BetaHuhn/repo-file-sync-action@v1
+        uses: BetaHuhn/repo-file-sync-action@8b92be3375cf1d1b0cd579af488a9255572e4619 # v1
         with:
           GH_PAT: ${{ secrets.SYNC_CODE_PAT }}
           CONFIG_PATH: .github/sync_code.yml
