@@ -29,6 +29,9 @@ type DeleteRequestSpec struct {
 type DeleteRequestStatus struct {
 	//+kubebuilder:validation:Enum=Pending;Processing;Completed;Failed
 	Phase RequestPhase `json:"phase,omitempty"`
+	// Conditions contains the different condition statuses for this request.
+	// +optional
+	Conditions []Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

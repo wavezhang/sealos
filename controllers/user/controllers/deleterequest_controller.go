@@ -23,8 +23,11 @@ import (
 
 	"github.com/go-logr/logr"
 	userv1 "github.com/labring/sealos/controllers/user/api/v1"
+	"github.com/labring/sealos/controllers/user/controllers/helper"
+	"github.com/labring/sealos/controllers/user/controllers/helper/authz"
 	"github.com/labring/sealos/controllers/user/controllers/helper/config"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,6 +41,9 @@ type DeleteRequestReconciler struct {
 	Scheme   *runtime.Scheme
 	Logger   logr.Logger
 	Recorder record.EventRecorder
+	// Authorizer re-checks the creator recorded by the admission webhook before
+	// deleting the user and its namespace.
+	Authorizer authz.Authorizer
 
 	// expirationTime is the time duration of the request is expired
 	expirationTime time.Duration
@@ -96,6 +102,29 @@ func (r *DeleteRequestReconciler) reconcile(
 		return ctrl.Result{}, nil
 	}
 
+	// Re-validate the creator recorded by the admission webhook before any
+	// destructive operation. The webhook is the primary gate; this check
+	// protects requests created while the webhook was disabled or whose creator
+	// lost the permission afterwards.
+	allowed, reason, err := r.authorize(ctx, request)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !allowed {
+		r.Logger.Info("delete request denied", "name", request.Name, "reason", reason)
+		r.Recorder.Eventf(
+			request,
+			corev1.EventTypeWarning,
+			"Unauthorized",
+			"DeleteRequest denied: %s",
+			reason,
+		)
+		if err := r.denyRequest(ctx, request, reason); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// handle the request
 
 	// get user
@@ -126,6 +155,46 @@ func (r *DeleteRequestReconciler) reconcile(
 		return ctrl.Result{RequeueAfter: DeleteRequestRequeueDuration}, nil
 	}
 
+	// get namespace before deleting the user and confirm that it really belongs
+	// to the target user
+	ns := corev1.Namespace{}
+	if err := r.Get(
+		ctx,
+		client.ObjectKey{Name: config.GetUsersNamespace(user.Name)},
+		&ns,
+	); err != nil {
+		r.Logger.Error(err, "get ns error", "name", config.GetUsersNamespace(user.Name))
+		r.Recorder.Eventf(
+			request,
+			corev1.EventTypeWarning,
+			"GetNamespaceError",
+			"get namespace %s error: %s",
+			config.GetUsersNamespace(user.Name),
+			err.Error(),
+		)
+		return ctrl.Result{}, err
+	}
+	if creator := ns.Annotations[userv1.UserAnnotationCreatorKey]; creator != "" && creator != user.Name {
+		reason := fmt.Sprintf(
+			"namespace %s belongs to user %s, not %s",
+			ns.Name,
+			creator,
+			user.Name,
+		)
+		r.Logger.Info("delete request denied", "name", request.Name, "reason", reason)
+		r.Recorder.Eventf(
+			request,
+			corev1.EventTypeWarning,
+			"Unauthorized",
+			"DeleteRequest denied: %s",
+			reason,
+		)
+		if err := r.denyRequest(ctx, request, reason); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// delete user
 	if err := r.Delete(ctx, &user); err != nil {
 		r.Logger.Error(err, "delete user error", "name", user.Name)
@@ -135,25 +204,6 @@ func (r *DeleteRequestReconciler) reconcile(
 			"DeleteUserError",
 			"delete user %s error: %s",
 			user.Name,
-			err.Error(),
-		)
-		return ctrl.Result{}, err
-	}
-
-	// get namespace
-	ns := corev1.Namespace{}
-	if err := r.Get(
-		ctx,
-		client.ObjectKey{Name: config.GetUsersNamespace(user.Name)},
-		&ns,
-	); err != nil {
-		r.Logger.Error(err, "get ns error", "name", ns.Name)
-		r.Recorder.Eventf(
-			request,
-			corev1.EventTypeWarning,
-			"GetNamespaceError",
-			"get namespace %s error: %s",
-			ns.Name,
 			err.Error(),
 		)
 		return ctrl.Result{}, err
@@ -223,6 +273,9 @@ func (r *DeleteRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.Recorder = mgr.GetEventRecorderFor(controllerName)
 	}
 	r.Scheme = mgr.GetScheme()
+	if r.Authorizer == nil {
+		r.Authorizer = authz.NewClientAuthorizer(mgr.GetClient())
+	}
 	r.Logger.V(1).Info("init reconcile deleterequest controller")
 	r.expirationTime = time.Minute * 10
 	r.retentionTime = time.Minute * 30
@@ -272,6 +325,48 @@ func (r *DeleteRequestReconciler) updateRequestStatus(
 	}
 	r.Logger.V(1).Info("update OperationRequest status success", "request", request)
 	return nil
+}
+
+func (r *DeleteRequestReconciler) authorizer() authz.Authorizer {
+	if r.Authorizer != nil {
+		return r.Authorizer
+	}
+	return authz.NewClientAuthorizer(r.Client)
+}
+
+func (r *DeleteRequestReconciler) authorize(
+	ctx context.Context,
+	request *userv1.DeleteRequest,
+) (bool, string, error) {
+	creator := request.Annotations[userv1.UserAnnotationCreatorKey]
+	if creator == "" {
+		return false, "delete request does not record an authenticated creator", nil
+	}
+	return authz.DeleteRequestDecision(
+		ctx,
+		r.authorizer(),
+		authz.Identity{Username: creator},
+		request.Spec.User,
+	)
+}
+
+// denyRequest marks a request as failed and records an explicit condition so
+// that the rejection is visible on the object.
+func (r *DeleteRequestReconciler) denyRequest(
+	ctx context.Context,
+	request *userv1.DeleteRequest,
+	message string,
+) error {
+	now := metav1.Now()
+	request.Status.Conditions = helper.UpdateCondition(request.Status.Conditions, userv1.Condition{
+		Type:               userv1.Authorized,
+		Status:             corev1.ConditionFalse,
+		LastHeartbeatTime:  now,
+		LastTransitionTime: now,
+		Reason:             "Unauthorized",
+		Message:            message,
+	})
+	return r.updateRequestStatus(ctx, request, userv1.RequestFailed)
 }
 
 // isUserDeleted returns true if the user is deleted

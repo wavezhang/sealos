@@ -44,6 +44,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-user-sealos-io-v1-deleterequest
+  failurePolicy: Fail
+  name: mdeleterequest.kb.io
+  rules:
+  - apiGroups:
+    - user.sealos.io
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - deleterequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-user-sealos-io-v1-user
   failurePolicy: Fail
   name: muser.kb.io
@@ -83,6 +103,26 @@ webhooks:
     - UPDATE
     resources:
     - operationrequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-user-sealos-io-v1-deleterequest
+  failurePolicy: Fail
+  name: vdeleterequest.kb.io
+  rules:
+  - apiGroups:
+    - user.sealos.io
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - deleterequests
   sideEffects: None
 - admissionReviewVersions:
   - v1
