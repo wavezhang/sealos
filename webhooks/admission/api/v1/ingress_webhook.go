@@ -285,13 +285,11 @@ func hostsOverlap(a, b string) bool {
 	if a == b {
 		return true
 	}
-	if strings.HasPrefix(a, "*.") {
-		parent := strings.TrimPrefix(a, "*.")
+	if parent, ok := strings.CutPrefix(a, "*."); ok {
 		// A wildcard certificate/rule does not cover its own apex.
 		return b != parent && dns.IsSubDomain(parent, b)
 	}
-	if strings.HasPrefix(b, "*.") {
-		parent := strings.TrimPrefix(b, "*.")
+	if parent, ok := strings.CutPrefix(b, "*."); ok {
 		return a != parent && dns.IsSubDomain(parent, a)
 	}
 	return false
